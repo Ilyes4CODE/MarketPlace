@@ -6,7 +6,10 @@ class Conversation(models.Model):
     seller = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='seller_conversations')
     buyer = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='buyer_conversations')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='conversations')
-    created_at = models.DateTimeField(auto_now_add=True) 
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('seller', 'buyer', 'product')  # Ensure unique conversations
 
     def __str__(self):
         return f"Conversation between {self.seller.profile.username} (Seller) and {self.buyer.profile.username} (Buyer)"

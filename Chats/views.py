@@ -3,7 +3,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import Conversation
 from .serializer import ConversationSerializer, MessageSerializer
-
+from Product.models import Product
+from rest_framework import status
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_conversations(request):
@@ -25,3 +26,22 @@ def list_messages(request, conversation_id):
     serializer = MessageSerializer(messages, many=True)
     return Response(serializer.data)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def start_conversation(request, product_id):
+    buyer = request.user.marketuser  # The authenticated user is the buyer
+
+    try:
+        product = Product.objects.get(id=product_id)
+        seller = product.seller  # The product owner is the seller
+    except Product.DoesNotExist:
+        return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    conversation, created = Conversation.objects.get_or_create(
+        seller=seller,
+        buyer=buyer,
+        product=product
+    )
+
+    serializer = ConversationSerializer(conversation)
+    return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)

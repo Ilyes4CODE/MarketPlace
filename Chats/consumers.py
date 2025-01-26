@@ -27,7 +27,7 @@ class ConversationConsumer(AsyncWebsocketConsumer):
         sender_id = text_data_json['sender_id']
 
         await self.save_message(sender_id, message)
-oup
+
         await self.channel_layer.group_send(
             self.room_group_name,
             {
@@ -41,7 +41,6 @@ oup
         message = event['message']
         sender_id = event['sender_id']
 
-        # Send message to WebSocket
         await self.send(text_data=json.dumps({
             'message': message,
             'sender_id': sender_id,
