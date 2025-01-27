@@ -46,6 +46,8 @@ INSTALLED_APPS = [
     'Product',
     'channels',
     'Chats',
+    'panel',
+   
 
 ]
 ASGI_APPLICATION = 'MarketPlace.asgi.application'
@@ -60,7 +62,14 @@ CHANNEL_LAYERS = {
         'BACKEND': 'channels.layers.InMemoryChannelLayer',  # Use Redis in production
     },
 }
-
+# CHANNEL_LAYERS = {
+#     'default': {
+#         'BACKEND': 'channels_redis.core.RedisChannelLayer',
+#         'CONFIG': {
+#             'hosts': [('127.0.0.1', 6379)],
+#         },
+#     },
+# }
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=90),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=90),

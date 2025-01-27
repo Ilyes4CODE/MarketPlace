@@ -1,10 +1,29 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .models import Conversation
-from .serializer import ConversationSerializer, MessageSerializer
+from .models import Conversation,Message,Notification
+from .serializer import ConversationSerializer, MessageSerializer,NotificationSerializer
 from Product.models import Product
 from rest_framework import status
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_messages_as_seen(request, conversation_id):
+    user = request.user.marketuser
+
+    Message.objects.filter(
+        conversation_id=conversation_id,
+        conversation__buyer=user 
+    ).update(seen=True)
+
+    Message.objects.filter(
+        conversation_id=conversation_id,
+        conversation__seller=user 
+    ).update(seen=True)
+
+    return Response({"message": "Messages marked as seen"}, status=status.HTTP_200_OK)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_conversations(request):
@@ -25,6 +44,16 @@ def list_messages(request, conversation_id):
     messages = conversation.messages.all()
     serializer = MessageSerializer(messages, many=True)
     return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_notifications(request):
+    user = request.user.marketuser
+    notifications = Notification.objects.filter(user=user, is_read=False)  # Fetch unread notifications
+    serializer = NotificationSerializer(notifications, many=True)
+    return Response(serializer.data)
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
