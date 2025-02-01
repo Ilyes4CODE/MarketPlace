@@ -1,20 +1,29 @@
-# Product/serializers.py
 from rest_framework import serializers
-from .models import Product, ProductPhoto
+from .models import Product, ProductPhoto, Bid
 
 class ProductPhotoSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductPhoto
         fields = ['id', 'photo']
 
+
 class ProductSerializer(serializers.ModelSerializer):
-    photos = ProductPhotoSerializer(many=True, read_only=True)  
+    photos = ProductPhotoSerializer(many=True, read_only=True)
 
     class Meta:
         model = Product
-        fields = ['id', 'seller', 'title', 'description', 'price', 'upload_date', 'condition', 'is_approved', 'photos']
-        read_only_fields = ['id', 'seller', 'upload_date', 'is_approved']
+        fields = [
+            'id', 'title', 'description', 'price', 'condition', 
+            'is_approved', 'sale_type', 'seller', 'photos'
+        ]
+        read_only_fields = ['id', 'is_approved', 'seller']
 
-    def create(self, validated_data):
-        seller = self.context['seller']
-        return Product.objects.create(seller=seller, **validated_data)
+
+class BidSerializer(serializers.ModelSerializer):
+    bidder_name = serializers.CharField(source='bidder.user.username', read_only=True)
+    product_name = serializers.CharField(source='product.name', read_only=True)
+
+    class Meta:
+        model = Bid
+        fields = ['id', 'amount', 'bidder', 'product', 'bidder_name', 'product_name','winner']
+        read_only_fields = ['id', 'bidder', 'product']

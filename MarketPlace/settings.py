@@ -26,11 +26,12 @@ SECRET_KEY = 'django-insecure-!%g%m2y4k6%_c9c$dy2!a#_&azzy(s^qt6&j2$@zx1&tqx)m3@
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -44,9 +45,11 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'drf_yasg',
     'Product',
-    'channels',
     'Chats',
     'panel',
+    'channels',
+    
+ 
    
 
 ]
@@ -56,6 +59,25 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
+
+# WEBSOCKET_URL = '/ws/'
+
+# # Redis Settings
+# WS4REDIS_CONNECTION = {
+#     'host': '127.0.0.1',  # Redis server host
+#     'port': 6379,         # Redis server port
+#     'db': 0,              # Redis database number
+# }
+
+# # Django Sessions with Redis (optional for authenticated users)
+# SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
+# SESSION_REDIS = {
+#     'host': '127.0.0.1',
+#     'port': 6379,
+#     'db': 0,
+#     'password': None,
+#     'prefix': 'session',
+# }
 
 CHANNEL_LAYERS = {
     'default': {
@@ -140,7 +162,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'MarketPlace.wsgi.application'
+# WSGI_APPLICATION = 'MarketPlace.wsgi.application'
 
 
 # Database

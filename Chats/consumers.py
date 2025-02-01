@@ -1,69 +1,93 @@
+# Chats/consumers.py
+
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
-from .models import Message, Conversation
-from .serializer import MessageSerializer
-from django.utils import timezone
-from channels.db import database_sync_to_async
+from asgiref.sync import sync_to_async
+from django.core.exceptions import ObjectDoesNotExist
+from Chats.models import Conversation, Message
+from Auth.models import MarketUser
 
-class ConversationConsumer(AsyncWebsocketConsumer):
+# Dictionary to store active WebSocket connections
+active_connections = {}
+
+class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        conversation_id = self.scope['url_route']['kwargs']['id']
-        self.conversation = await self.get_conversation(conversation_id)
-        if self.conversation.seller == self.scope['user'].marketuser or self.conversation.buyer == self.scope['user'].marketuser:
-            self.room_group_name = f'conversation_{conversation_id}'
-            await self.channel_layer.group_add(
-                self.room_group_name,
-                self.channel_name
-            )
-            await self.accept()
-        else:
-            await self.close()
+        self.conversation_id = self.scope['url_route']['kwargs']['conversation_id']
+        self.room_group_name = f"chat_{self.conversation_id}"
+
+        # Add the connection to the active connections
+        if self.conversation_id not in active_connections:
+            active_connections[self.conversation_id] = set()
+        active_connections[self.conversation_id].add(self)
+
+        # Accept the connection
+        await self.accept()
+        print(f"✅ Client connected to chat {self.conversation_id}")
 
     async def disconnect(self, close_code):
-        # Leave the room group
-        await self.channel_layer.group_discard(
-            self.room_group_name,
-            self.channel_name
-        )
+        # Remove the connection from active connections
+        if self.conversation_id in active_connections:
+            active_connections[self.conversation_id].discard(self)
+            if not active_connections[self.conversation_id]:
+                del active_connections[self.conversation_id]
+        print(f"🚪 Client disconnected from chat {self.conversation_id}")
 
     async def receive(self, text_data):
-        # Receive message from WebSocket
-        text_data_json = json.loads(text_data)
-        message_content = text_data_json['message']
+        # Parse the incoming message
+        data = json.loads(text_data)
+        sender_id = data.get("sender_id")
+        content = data.get("content")
 
-        # Save the message to the database
-        message = await self.save_message(message_content)
+        # Fetch conversation and users
+        conversation, seller, buyer, sender = await self.get_conversation_and_users(self.conversation_id, sender_id)
 
-        # Send message to WebSocket group
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                'type': 'chat_message',
-                'message': message_content,
-                'sender': str(self.scope['user']),
-                'timestamp': timezone.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-        )
+        if not conversation:
+            await self.send(json.dumps({"error": "Conversation not found"}))
+            return
 
-    async def chat_message(self, event):
-        # Send message to WebSocket
-        await self.send(text_data=json.dumps({
-            'message': event['message'],
-            'sender': event['sender'],
-            'timestamp': event['timestamp']
-        }))
+        if not sender:
+            await self.send(json.dumps({"error": "Invalid sender"}))
+            return
 
-    async def get_conversation(self, conversation_id):
+        # Ensure sender is either the seller or the buyer
+        if sender not in [seller, buyer]:
+            await self.send(json.dumps({"error": "Unauthorized"}))
+            return
+
+        # Save the message
+        new_message = await self.save_message(conversation, sender, content)
+
+        # Broadcast the message to all connected clients
+        response = {
+            "sender": sender.profile.username,
+            "content": content,
+            "timestamp": str(new_message.timestamp)
+        }
+
+        for conn in active_connections.get(self.conversation_id, set()):
+            await conn.send(json.dumps(response))
+
+    @sync_to_async
+    def get_conversation_and_users(self, conversation_id, sender_id):
+        """
+        Fetches the conversation, seller, buyer, and sender from the database.
+        """
         try:
-            return await database_sync_to_async(Conversation.objects.get)(id=conversation_id)
-        except Conversation.DoesNotExist:
-            return None
+            conversation = Conversation.objects.select_related("seller", "buyer").get(id=conversation_id)
+            seller = conversation.seller
+            buyer = conversation.buyer
+            sender = MarketUser.objects.select_related('profile').get(id=sender_id)
+            return conversation, seller, buyer, sender
+        except ObjectDoesNotExist:
+            return None, None, None, None
 
-    async def save_message(self, message_content):
-        user = self.scope['user'].marketuser
-        message = Message.objects.create(
-            conversation=self.conversation,
-            sender=user,
-            content=message_content
+    @sync_to_async
+    def save_message(self, conversation, sender, content):
+        """
+        Saves a new message to the database.
+        """
+        return Message.objects.create(
+            conversation=conversation,
+            sender=sender,
+            content=content
         )
-        return message

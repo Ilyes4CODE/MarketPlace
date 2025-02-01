@@ -26,7 +26,7 @@ class Message(models.Model):
     
     
 class Notification(models.Model):
-    user = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='notifications')  
+    user = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='chat_notifications')  
     message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='notifications')  
     is_read = models.BooleanField(default=False) 
     created_at = models.DateTimeField(auto_now_add=True)

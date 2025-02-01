@@ -66,6 +66,7 @@ def start_conversation(request, product_id):
     except Product.DoesNotExist:
         return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
 
+    # Check if the conversation already exists or create a new one
     conversation, created = Conversation.objects.get_or_create(
         seller=seller,
         buyer=buyer,
@@ -73,4 +74,11 @@ def start_conversation(request, product_id):
     )
 
     serializer = ConversationSerializer(conversation)
-    return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+    # Generate WebSocket URL
+    ws_url = f"ws://localhost:8765/ws/chat/{conversation.id}/"
+
+    return Response({
+        "conversation": serializer.data,
+        "ws_url": ws_url  # Include WebSocket URL in response
+    }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)

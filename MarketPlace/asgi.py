@@ -1,19 +1,24 @@
+# MarketPlace/asgi.py
 
 import os
 from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
-from Chats.routing import websocket_urlpatterns
-
+from django.urls import path
+  # Import your WebSocket consumer
+from channels.security.websocket import AllowedHostsOriginValidator
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'MarketPlace.settings')
+django_asgi_app = get_asgi_application()
 
-# ProtocolTypeRouter manages the type of protocol (HTTP or WebSocket)
+from Chats import routing
+
 application = ProtocolTypeRouter({
-    "http": get_asgi_application(),  # HTTP protocol
-    "websocket": AuthMiddlewareStack(  # WebSocket with authentication
-        URLRouter(
-            websocket_urlpatterns  
+    "http": django_asgi_app,  # HTTP requests
+    "websocket": AllowedHostsOriginValidator(
+        AuthMiddlewareStack(
+            URLRouter(
+                routing.websocket_routes
+            )
         )
     ),
 })
-

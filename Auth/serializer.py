@@ -43,7 +43,7 @@ class MarketUserSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = MarketUser
-        fields = ['name', 'phone', 'email','profile_picture']
+        fields = ['id','name', 'phone', 'email','profile_picture']
 
 
 class UpdateUserSerializer(serializers.ModelSerializer):
