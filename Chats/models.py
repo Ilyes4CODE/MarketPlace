@@ -17,13 +17,13 @@ class Conversation(models.Model):
 class Message(models.Model):
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
     sender = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='sent_messages')
-    content = models.TextField()
+    content = models.TextField(blank=True, null=True)  # Make content optional
+    picture = models.ImageField(upload_to='message_pictures/', blank=True, null=True)  # Add picture field
     timestamp = models.DateTimeField(auto_now_add=True)
-    seen = models.BooleanField(default=False) 
+    seen = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Message from {self.sender.profile.username} at {self.timestamp}"
-    
     
 class Notification(models.Model):
     user = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='chat_notifications')  

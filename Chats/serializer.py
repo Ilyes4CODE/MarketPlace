@@ -4,8 +4,8 @@ from .models import Message, Conversation,Notification
 class MessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Message
-        fields = ['id', 'sender', 'content', 'timestamp']
-        read_only_fields = ['id', 'sender', 'timestamp']
+        fields = ['id', 'sender', 'content', 'picture', 'timestamp', 'seen']
+        read_only_fields = ['id', 'sender', 'timestamp', 'seen']
 
 
 class ConversationSerializer(serializers.ModelSerializer):

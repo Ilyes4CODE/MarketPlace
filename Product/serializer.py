@@ -27,3 +27,5 @@ class BidSerializer(serializers.ModelSerializer):
         model = Bid
         fields = ['id', 'amount', 'bidder', 'product', 'bidder_name', 'product_name','winner']
         read_only_fields = ['id', 'bidder', 'product']
+
+

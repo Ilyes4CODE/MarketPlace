@@ -47,14 +47,18 @@ class ProductPhoto(models.Model):
         return f"Photo for {self.product.title}"
 
 class Bid(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='bids')
-    bidder = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='bids')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    buyer = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name="bids")  # Updated to MarketUser
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    bid_date = models.DateTimeField(default=timezone.now)
-    winner = models.BooleanField(default=False)
+    status = models.CharField(
+        max_length=10,
+        choices=[("pending", "Pending"), ("accepted", "Accepted"), ("rejected", "Rejected")],
+        default="pending"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.bidder.profile.username} bid {self.amount} on {self.product.title}"
+        return f"{self.buyer.name} bid {self.amount} on {self.product.title}"
 
 class Listing(models.Model):
     buyer = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='purchases')
@@ -89,13 +93,22 @@ class Notificationbid(models.Model):
 def create_bid_notification(sender, instance, created, **kwargs):
     if created:
         product = instance.product
-        seller = product.seller
-        message = f"A new bid of {instance.amount} has been placed on your product '{product.title}'."
-        
-        # Save notification in the database
+        seller = product.seller  # The seller of the product
+        buyer = instance.buyer  # The buyer who placed the bid
+
+        # # Notify the Seller (New Bid Placed)
+        # seller_message = f"A new bid of {instance.amount} has been placed on your product '{product.title}'."
+        # Notificationbid.objects.create(
+        #     recipient=seller,
+        #     message=seller_message,
+        #     bid=instance
+        # )
+
+        # Notify the Buyer (Bid Under Review)
+        buyer_message = f"Your bid of {instance.amount} on '{product.title}' is under review."
         Notificationbid.objects.create(
-            recipient=seller,  # Save the recipient (the seller)
-            message=message,   # Notification message
-            bid=instance       # The bid related to the notification
+            recipient=buyer,
+            message=buyer_message,
+            bid=instance
         )
         
