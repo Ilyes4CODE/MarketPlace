@@ -136,10 +136,9 @@ SIMPLE_JWT = {
     "SLIDING_TOKEN_REFRESH_SERIALIZER": "rest_framework_simplejwt.serializers.TokenRefreshSlidingSerializer",
 }
 
-TWILIO_ACCOUNT_SID = "ACca197a4c83ac54c25fac60c430d6586b"
-TWILIO_AUTH_TOKEN = "c1732fae26994383240b3b59228dbea8"
-TWILIO_PHONE_NUMBER = "+16813753932"
-
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
