@@ -18,12 +18,10 @@ from Chats import routing
 application = ProtocolTypeRouter({
     "http": django_asgi_app,
     "websocket": AllowedHostsOriginValidator(
-        JWTAuthMiddleware(  # Use our custom JWT authentication
             AuthMiddlewareStack(
                 URLRouter(
                     routing.websocket_routes
                 )
-            )
-        )
+            )  
     ),
 })
