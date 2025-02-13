@@ -205,6 +205,9 @@ USE_TZ = True
 STATIC_URL = 'static/'
 MEDIA_URL = ''
 MEDIA_ROOT = os.path.join(BASE_DIR,'upload/')
+INSTALLED_APPS.insert(1, "whitenoise.runserver_nostatic")
+
+MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
