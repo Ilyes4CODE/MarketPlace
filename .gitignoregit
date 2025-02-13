@@ -1,1 +1,2 @@
 ".env"  add .gitignoregit commit -m "Added .env to .gitignore"
+.env

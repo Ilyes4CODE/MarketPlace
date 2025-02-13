@@ -9,7 +9,8 @@ https://docs.djangoproject.com/en/5.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
-
+from dotenv import load_dotenv
+load_dotenv()
 from pathlib import Path
 import os
 from datetime import timedelta
@@ -24,9 +25,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-!%g%m2y4k6%_c9c$dy2!a#_&azzy(s^qt6&j2$@zx1&tqx)m3@'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "True") == "True"
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 
 # Application definition
 
@@ -64,26 +65,6 @@ REST_FRAMEWORK = {
     ),
 }
 
-
-# WEBSOCKET_URL = '/ws/'
-
-# # Redis Settings
-# WS4REDIS_CONNECTION = {
-#     'host': '127.0.0.1',  # Redis server host
-#     'port': 6379,         # Redis server port
-#     'db': 0,              # Redis database number
-# }
-
-# # Django Sessions with Redis (optional for authenticated users)
-# SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
-# SESSION_REDIS = {
-#     'host': '127.0.0.1',
-#     'port': 6379,
-#     'db': 0,
-#     'password': None,
-#     'prefix': 'session',
-# }
-
 # CHANNEL_LAYERS = {
 #     'default': {
 #         'BACKEND': 'channels.layers.InMemoryChannelLayer',  # Use Redis in production
@@ -94,7 +75,7 @@ CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            'hosts': [('127.0.0.1', 6379)],
+            'hosts':  [os.getenv("REDIS_URL")],
         },
     },
 }
@@ -182,7 +163,7 @@ TEMPLATES = [
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': BASE_DIR / os.getenv("DATABASE_NAME", "db.sqlite3"),
     }
 }
 
