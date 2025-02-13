@@ -58,6 +58,7 @@ pillow==11.1.0
 propcache==0.2.1
 proto-plus==1.26.0
 protobuf==5.29.3
+psycopg2-binary==2.9.10
 pyasn1==0.6.1
 pyasn1_modules==0.4.1
 pycparser==2.22
@@ -87,6 +88,7 @@ uritemplate==4.1.1
 urllib3==2.3.0
 uvicorn==0.34.0
 websockets==14.2
+whitenoise==6.9.0
 yarl==1.18.3
 zope.event==5.0
 zope.interface==7.2
