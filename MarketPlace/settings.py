@@ -15,7 +15,8 @@ from pathlib import Path
 import os
 from datetime import timedelta
 import firebase_admin
-from firebase_admin import credentials
+import json
+from firebase_admin import credentials, initialize_app
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -51,10 +52,15 @@ INSTALLED_APPS = [
     'panel',
     'channels',
 ]
+firebase_json_str = os.getenv("FIREBASE_CREDENTIALS_JSON")
 
-FIREBASE_CREDENTIALS_PATH = os.getenv('FIREBASE_CREDENTIALS_PATH')
-cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
-firebase_admin.initialize_app(cred)
+if not firebase_json_str:
+    raise ValueError("FIREBASE_CREDENTIALS_JSON is not set in environment variables.")
+
+firebase_credentials = json.loads(firebase_json_str)
+
+cred = credentials.Certificate(firebase_credentials)
+initialize_app(cred)
 
 ASGI_APPLICATION = 'MarketPlace.asgi.application'
 REST_FRAMEWORK = {

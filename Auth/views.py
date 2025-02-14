@@ -181,7 +181,8 @@ def verify_otp(request):
             profile=django_user,
             name=user_data['name'],
             phone=phone,
-            email=user_data['email']
+            email=user_data['email'],
+            is_verified = True
         )
 
         # Generate JWT tokens
