@@ -134,7 +134,7 @@ def end_bid(request, product_id, bid_id):
         return Response({"error": "Selected bid not found or does not belong to this product."}, status=status.HTTP_404_NOT_FOUND)
 
     # Mark the selected bid as the winner
-    selected_bid.winner = True
+    selected_bid.buyer = True
     selected_bid.save()
 
     # Update the product status to sold
@@ -144,7 +144,7 @@ def end_bid(request, product_id, bid_id):
     # Create a notification for the winner
     notification_message = f"Congratulations! Your bid of {selected_bid.amount} on {product.title} has won."
     Notificationbid.objects.create(
-        recipient=selected_bid.bidder,
+        recipient=selected_bid.buyer,
         message=notification_message,
         bid=selected_bid,
     )
