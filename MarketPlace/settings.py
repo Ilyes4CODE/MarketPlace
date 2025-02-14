@@ -14,6 +14,8 @@ load_dotenv()
 from pathlib import Path
 import os
 from datetime import timedelta
+import firebase_admin
+from firebase_admin import credentials
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -49,14 +51,11 @@ INSTALLED_APPS = [
     'Chats',
     'panel',
     'channels',
-    
-   
- 
-   
-
 ]
 
-
+FIREBASE_CREDENTIALS_PATH = os.path.join(BASE_DIR,'MarketPlace/serviceAccountKey.json')
+cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
+firebase_admin.initialize_app(cred)
 
 ASGI_APPLICATION = 'MarketPlace.asgi.application'
 REST_FRAMEWORK = {

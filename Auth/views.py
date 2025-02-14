@@ -12,77 +12,194 @@ from django.conf import settings
 from twilio.rest import Client
 import random
 from django.core.cache import cache
+from firebase_admin import auth
+from django.contrib.auth.models import User
+import logging
+
+def send_otp(phone):
+    try:
+        # Firebase Admin SDK sends the OTP and returns a verification_id
+        appVerifier = auth.RecaptchaVerifier('recaptcha-container', size='invisible')
+        confirmation_result = auth.sign_in_with_phone_number(phone, appVerifier)
+        verification_id = confirmation_result.verification_id
+        
+        # Store the verification_id in cache with a 5-minute expiry
+        cache.set(f"verification_id_{phone}", verification_id, timeout=300)
+        return True
+    except Exception as e:
+        print(f"Error sending OTP: {e}")
+        return False
+
+phone_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Phone number of the user")
+email_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Email of the user")
+name_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Name of the user")
+password_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Password for the user (should be stored securely)")
+
+phone_schema2 = openapi.Schema(type=openapi.TYPE_STRING, description="Phone number of the user")
+otp_schema = openapi.Schema(type=openapi.TYPE_STRING, description="One-Time Password (OTP) sent to the user's phone")
+verification_id_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Verification ID from Firebase")
 
 @swagger_auto_schema(
     method='post',
-    operation_description="Register a new user in the marketplace.",
-    request_body=MarketUserSerializer,
+    operation_description="Registers a new user and sends an OTP to the provided phone number. User data is temporarily stored in cache for OTP verification.",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'phone': phone_schema,
+            'email': email_schema,
+            'name': name_schema,
+            'password': password_schema,
+        },
+        required=['phone', 'email', 'name', 'password']
+    ),
     responses={
-        status.HTTP_201_CREATED: openapi.Response(
-            description="User registered successfully!",
+        200: openapi.Response(
+            description="OTP sent to the phone number. Please verify.",
+            examples={
+                "application/json": {
+                    "message": "OTP sent to your phone number. Please verify."
+                }
+            }
+        ),
+        400: openapi.Response(
+            description="Bad request. Missing required parameters.",
+            examples={
+                "application/json": {
+                    "error": "Phone, email, name, and password are required."
+                }
+            }
+        )
+    }
+)
+@api_view(['POST'])
+def register_market_user(request):
+    # Get user data from the request
+    phone = request.data.get('phone')
+    email = request.data.get('email')
+    name = request.data.get('name')
+    password = request.data.get('password')
+
+    if not phone or not email or not name or not password:
+        return Response({"error": "Phone, email, name, and password are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Save user data temporarily in cache before OTP verification
+    user_data = {
+        'phone': phone,
+        'email': email,
+        'name': name,
+        'password': password
+    }
+
+    # Cache the user data with an expiration time (e.g., 5 minutes)
+    cache.set(f"user_data_{phone}", user_data, timeout=300)
+
+    # Optionally, you can also store the verification ID in cache if you need to use it during the OTP verification step
+    return Response({"message": "OTP sent to your phone number. Please verify."}, status=status.HTTP_200_OK)
+
+
+logger = logging.getLogger(__name__)
+
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="Verifies OTP and registers a new user.",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'phone': phone_schema2,
+            'otp': otp_schema,
+            'verification_id': verification_id_schema
+        },
+        required=['phone', 'otp', 'verification_id']
+    ),
+    responses={
+        201: openapi.Response(
+            description="User successfully registered",
             examples={
                 "application/json": {
                     "message": "User registered successfully!",
                     "user": {
                         "id": 1,
                         "name": "John Doe",
-                        "email": "johndoe@example.com",
-                        "phone": "+123456789"
+                        "email": "john.doe@example.com",
+                        "phone": "1234567890"
                     },
                     "tokens": {
-                        "refresh": "your_refresh_token",
-                        "access": "your_access_token"
+                        "refresh": "refresh_token_here",
+                        "access": "access_token_here"
                     }
                 }
             }
         ),
-        status.HTTP_400_BAD_REQUEST: openapi.Response(
-            description="Bad request - Validation errors",
+        400: openapi.Response(
+            description="Bad request. Missing or invalid parameters.",
             examples={
                 "application/json": {
-                    "email": ["A user with this email already exists."],
-                    "password": ["Ensure this field has at most 6 characters."]
+                    "error": "Phone number, OTP, and verification_id are required."
                 }
             }
         ),
+        500: openapi.Response(
+            description="Server error.",
+            examples={
+                "application/json": {
+                    "error": "An error occurred during verification."
+                }
+            }
+        )
     }
 )
 @api_view(['POST'])
-def register_market_user(request):
-    otp = request.data.get('otp')
+def verify_otp(request):
     phone = request.data.get('phone')
+    otp = request.data.get('otp')
+    verification_id = request.data.get('verification_id')
 
-    if not otp or not phone:
-        return Response({"error": "Phone number and OTP are required."}, status=status.HTTP_400_BAD_REQUEST)
+    # Validate input
+    if not otp or not phone or not verification_id:
+        return Response({"error": "Phone number, OTP, and verification_id are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Retrieve OTP from cache
-    stored_otp = cache.get(f"otp_{phone}")
+    try:
+        # Verify OTP with Firebase
+        phone_credential = auth.PhoneAuthProvider.credential(verification_id, otp)
+        user = auth.sign_in_with_credential(phone_credential)
 
-    if stored_otp is None:
-        return Response({"error": "OTP expired or not requested."}, status=status.HTTP_400_BAD_REQUEST)
+        # Retrieve user data from cache
+        user_data = cache.get(f"user_data_{phone}")
+        if not user_data:
+            return Response({"error": "No user data found."}, status=status.HTTP_400_BAD_REQUEST)
 
-    if stored_otp != otp:
-        return Response({"error": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
+        # Create Django user
+        django_user = User.objects.create_user(
+            username=user_data['email'],  # Use email as username
+            email=user_data['email'],
+            password=user_data['password']
+        )
 
-    # OTP verified, proceed with registration
-    serializer = MarketUserSerializer(data=request.data)
-    if serializer.is_valid():
-        user = serializer.save()
+        # Create MarketUser profile
+        market_user = MarketUser.objects.create(
+            profile=django_user,
+            name=user_data['name'],
+            phone=phone,
+            email=user_data['email']
+        )
 
         # Generate JWT tokens
-        refresh = RefreshToken.for_user(user.profile)
+        refresh = RefreshToken.for_user(django_user)
         access = refresh.access_token
 
-        # Delete OTP from cache after successful verification
-        cache.delete(f"otp_{phone}")
+        # Clean up the cached data
+        cache.delete(f"verification_id_{phone}")
+        cache.delete(f"user_data_{phone}")
 
+        # Return response with user info and tokens
         return Response({
             "message": "User registered successfully!",
             "user": {
-                "id": user.id,
-                "name": user.name,
-                "email": user.email,
-                "phone": user.phone
+                "id": market_user.id,
+                "name": market_user.name,
+                "email": market_user.email,
+                "phone": market_user.phone
             },
             "tokens": {
                 "refresh": str(refresh),
@@ -90,8 +207,15 @@ def register_market_user(request):
             }
         }, status=status.HTTP_201_CREATED)
 
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+    except auth.FirebaseError as e:
+        logger.error(f"Firebase OTP verification failed: {str(e)}")
+        return Response({"error": f"OTP verification failed: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        logger.error(f"Error during user verification: {str(e)}")
+        return Response({"error": "An error occurred during verification."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
 
 @swagger_auto_schema(method='get',operation_description="get user profile", responses={status.HTTP_200_OK: "User profile retrieved successfully!"})
 @permission_classes([IsAuthenticated])
@@ -124,27 +248,3 @@ def update_user_profile(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['POST'])
-def send_otp(request):
-    phone = request.data.get('phone')
-
-    if not phone:
-        return Response({"error": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
-    otp = str(random.randint(100000, 999999))
-
-    # Store OTP in cache with an expiration time (e.g., 5 minutes)
-    cache.set(f"otp_{phone}", otp, timeout=300)  # 300 seconds = 5 minutes
-
-    # Send OTP via Twilio
-    try:
-        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-        message = client.messages.create(
-            body=f"Your verification code is: {otp}",
-            from_=settings.TWILIO_PHONE_NUMBER,
-            to=phone
-        )
-
-        return Response({"message": "OTP sent successfully!"}, status=status.HTTP_200_OK)
-
-    except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

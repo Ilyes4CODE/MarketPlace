@@ -7,5 +7,5 @@ urlpatterns = [
     path('register/', views.register_market_user, name='register'),
     path('profile/', views.get_user_profile, name='profile'),
     path('profile/update/', views.update_user_profile, name='update_profile'),
-    path('send_otp/', views.send_otp, name='send_otp'),
+    path('verify-otp/', views.verify_otp, name='verify_otp'),
 ]

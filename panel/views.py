@@ -9,6 +9,7 @@ from Product.models import Bid, Notificationbid, MarketUser
 from decorators import admin_required
 from Auth.serializer import UserSerializer
 from decorators import admin_required
+
 class UserNotificationsView(ListAPIView):
     serializer_class = NotificationBidSerializer
     permission_classes = [IsAuthenticated]
