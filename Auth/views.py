@@ -8,27 +8,10 @@ from rest_framework.permissions import IsAuthenticated
 from .models import MarketUser
 from drf_yasg import openapi
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.conf import settings
-from twilio.rest import Client
-import random
 from django.core.cache import cache
-from firebase_admin import auth
-from django.contrib.auth.models import User
 import logging
 
-def send_otp(phone):
-    try:
-        # Firebase Admin SDK sends the OTP and returns a verification_id
-        appVerifier = auth.RecaptchaVerifier('recaptcha-container', size='invisible')
-        confirmation_result = auth.sign_in_with_phone_number(phone, appVerifier)
-        verification_id = confirmation_result.verification_id
-        
-        # Store the verification_id in cache with a 5-minute expiry
-        cache.set(f"verification_id_{phone}", verification_id, timeout=300)
-        return True
-    except Exception as e:
-        print(f"Error sending OTP: {e}")
-        return False
+
 
 phone_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Phone number of the user")
 email_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Email of the user")
@@ -98,125 +81,110 @@ def register_market_user(request):
 
 
 logger = logging.getLogger(__name__)
-
-
 @swagger_auto_schema(
     method='post',
-    operation_description="Verifies OTP and registers a new user.",
+    operation_description="تحقق من حالة رقم الهاتف وإنشاء حساب مستخدم في النظام.",
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
+        required=['status', 'phone'],
         properties={
-            'phone': phone_schema2,
-            'otp': otp_schema,
-            'verification_id': verification_id_schema
-        },
-        required=['phone', 'otp', 'verification_id']
+            'status': openapi.Schema(
+                type=openapi.TYPE_BOOLEAN,
+                description="حالة التحقق من OTP. يجب أن يكون 'True' في حالة النجاح."
+            ),
+            'phone': openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description="رقم الهاتف الخاص بالمستخدم."
+            )
+        }
     ),
     responses={
         201: openapi.Response(
-            description="User successfully registered",
+            description="تم تسجيل المستخدم بنجاح.",
             examples={
                 "application/json": {
-                    "message": "User registered successfully!",
+                    "status": True,
+                    "message": "تم تسجيل المستخدم بنجاح!",
                     "user": {
                         "id": 1,
-                        "name": "John Doe",
-                        "email": "john.doe@example.com",
-                        "phone": "1234567890"
+                        "name": "محمد أحمد",
+                        "email": "user@example.com",
+                        "phone": "+201234567890"
                     },
                     "tokens": {
-                        "refresh": "refresh_token_here",
-                        "access": "access_token_here"
+                        "refresh": "eyJhbGciOiJIUzI1NiIsIn...",
+                        "access": "eyJhbGciOiJIUzI1NiIsIn..."
                     }
                 }
             }
         ),
         400: openapi.Response(
-            description="Bad request. Missing or invalid parameters.",
+            description="خطأ في الطلب. تحقق من القيم المرسلة.",
             examples={
                 "application/json": {
-                    "error": "Phone number, OTP, and verification_id are required."
+                    "status": False,
+                    "error": "لم يتم العثور على بيانات المستخدم."
                 }
             }
         ),
         500: openapi.Response(
-            description="Server error.",
+            description="خطأ داخلي في الخادم.",
             examples={
                 "application/json": {
-                    "error": "An error occurred during verification."
+                    "status": False,
+                    "error": "حدث خطأ أثناء معالجة الطلب."
                 }
             }
-        )
+        ),
     }
 )
 @api_view(['POST'])
 def verify_otp(request):
-    phone = request.data.get('phone')
-    otp = request.data.get('otp')
-    verification_id = request.data.get('verification_id')
+    status_flag = request.data.get('status')  # ✅ Frontend sends 'status' (true/false)
+    phone = request.data.get('phone')  # ✅ Phone is still required to fetch user data
 
-    # Validate input
-    if not otp or not phone or not verification_id:
-        return Response({"error": "Phone number, OTP, and verification_id are required."}, status=status.HTTP_400_BAD_REQUEST)
+    if status_flag is None or phone is None:
+        return Response({"status": False, "error": "يجب إرسال الحالة ورقم الهاتف."}, status=status.HTTP_400_BAD_REQUEST)
 
-    try:
-        # Verify OTP with Firebase
-        phone_credential = auth.PhoneAuthProvider.credential(verification_id, otp)
-        user = auth.sign_in_with_credential(phone_credential)
+    if not isinstance(status_flag, bool):
+        return Response({"status": False, "error": "القيمة المرسلة للحالة غير صحيحة."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Retrieve user data from cache
-        user_data = cache.get(f"user_data_{phone}")
-        if not user_data:
-            return Response({"error": "No user data found."}, status=status.HTTP_400_BAD_REQUEST)
+    if not status_flag:
+        return Response({"status": False, "error": "فشل التحقق من رقم الهاتف."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create Django user
-        django_user = User.objects.create_user(
-            username=user_data['email'],  # Use email as username
-            email=user_data['email'],
-            password=user_data['password']
-        )
+    # ✅ Fetch user data from cache
+    user_data = cache.get(f"user_data_{phone}")
+    if not user_data:
+        return Response({"status": False, "error": "لم يتم العثور على بيانات المستخدم."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Create MarketUser profile
-        market_user = MarketUser.objects.create(
-            profile=django_user,
-            name=user_data['name'],
-            phone=phone,
-            email=user_data['email'],
-            is_verified = True
-        )
+    # ✅ Validate and create user using MarketUserSerializer
+    serializer = MarketUserSerializer(data=user_data)
+    if not serializer.is_valid():
+        return Response({"status": False, "error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Generate JWT tokens
-        refresh = RefreshToken.for_user(django_user)
-        access = refresh.access_token
+    market_user = serializer.save()
+    
+    # ✅ Generate JWT tokens
+    refresh = RefreshToken.for_user(market_user.profile)
+    access = refresh.access_token
 
-        # Clean up the cached data
-        cache.delete(f"verification_id_{phone}")
-        cache.delete(f"user_data_{phone}")
+    # ✅ Clean up cache
+    cache.delete(f"user_data_{phone}")
 
-        # Return response with user info and tokens
-        return Response({
-            "message": "User registered successfully!",
-            "user": {
-                "id": market_user.id,
-                "name": market_user.name,
-                "email": market_user.email,
-                "phone": market_user.phone
-            },
-            "tokens": {
-                "refresh": str(refresh),
-                "access": str(access)
-            }
-        }, status=status.HTTP_201_CREATED)
-
-    except auth.FirebaseError as e:
-        logger.error(f"Firebase OTP verification failed: {str(e)}")
-        return Response({"error": f"OTP verification failed: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
-    except Exception as e:
-        logger.error(f"Error during user verification: {str(e)}")
-        return Response({"error": "An error occurred during verification."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
+    return Response({
+        "status": True,
+        "message": "تم تسجيل المستخدم بنجاح!",
+        "user": {
+            "id": market_user.id,
+            "name": market_user.name,
+            "email": market_user.email,
+            "phone": market_user.phone
+        },
+        "tokens": {
+            "refresh": str(refresh),
+            "access": str(access)
+        }
+    }, status=status.HTTP_201_CREATED)
 
 @swagger_auto_schema(method='get',operation_description="get user profile", responses={status.HTTP_200_OK: "User profile retrieved successfully!"})
 @permission_classes([IsAuthenticated])
