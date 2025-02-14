@@ -31,7 +31,6 @@ DEBUG = os.getenv("DEBUG", "True") == "True"
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
 
-# Application definition
 
 INSTALLED_APPS = [
     'daphne',
@@ -53,7 +52,7 @@ INSTALLED_APPS = [
     'channels',
 ]
 
-FIREBASE_CREDENTIALS_PATH = os.path.join(BASE_DIR,'MarketPlace/serviceAccountKey.json')
+FIREBASE_CREDENTIALS_PATH = os.getenv('FIREBASE_CREDENTIALS_PATH')
 cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
 firebase_admin.initialize_app(cred)
 
