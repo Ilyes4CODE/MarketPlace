@@ -7,7 +7,7 @@ from .models import Conversation, Message, Notification
 from .serializer import ConversationSerializer, MessageSerializer, NotificationSerializer
 from Product.models import Product
 from rest_framework import status
-
+from decorators import verified_user_required , not_banned_user_required
 @swagger_auto_schema(
     method="post",
     operation_description="Mark all messages in a conversation as seen by the user.",
@@ -15,6 +15,8 @@ from rest_framework import status
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
 def mark_messages_as_seen(request, conversation_id):
     user = request.user.marketuser
 
@@ -38,6 +40,8 @@ def mark_messages_as_seen(request, conversation_id):
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
 def list_conversations(request):
     user = request.user.marketuser
     conversations = Conversation.objects.filter(seller=user) | Conversation.objects.filter(buyer=user)
@@ -55,6 +59,8 @@ def list_conversations(request):
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
 def list_messages(request, conversation_id):
     try:
         conversation = Conversation.objects.get(id=conversation_id)
@@ -73,6 +79,8 @@ def list_messages(request, conversation_id):
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
 def list_notifications(request):
     user = request.user.marketuser
     notifications = Notification.objects.filter(user=user, is_read=False)  # Fetch unread notifications
@@ -91,6 +99,8 @@ def list_notifications(request):
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
 def start_conversation(request, product_id):
     """
     Start a new conversation between the authenticated user (buyer) and a seller

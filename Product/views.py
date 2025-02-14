@@ -7,7 +7,7 @@ from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from .models import Product, ProductPhoto, Bid,Notificationbid
 from .serializer import ProductSerializer, ProductPhotoSerializer, BidSerializer
-
+from decorators import verified_user_required ,not_banned_user_required
 @swagger_auto_schema(
     method='post',
     operation_description="Create a new product. The authenticated user will be set as the seller.",
@@ -19,6 +19,8 @@ from .serializer import ProductSerializer, ProductPhotoSerializer, BidSerializer
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
 def create_product(request):
     seller = request.user.marketuser
     data = request.data
@@ -45,6 +47,8 @@ def create_product(request):
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
 def place_bid(request, product_id):
     # Check if the product exists and is eligible for bidding
     product = Product.objects.filter(id=product_id, sale_type='bid', is_approved=True).first()
@@ -115,6 +119,8 @@ def place_bid(request, product_id):
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
 def end_bid(request, product_id, bid_id):
     seller = request.user.marketuser
 
@@ -163,6 +169,8 @@ def end_bid(request, product_id, bid_id):
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
 def get_product_bids(request, product_id):
     try:
         product = Product.objects.get(id=product_id, seller=request.user.marketuser)
@@ -196,6 +204,8 @@ class ProductPagination(PageNumberPagination):
     }
 )
 @api_view(['GET'])
+@verified_user_required
+@not_banned_user_required
 def list_products(request):
     sale_type = request.query_params.get('sale_type', None)
     category = request.query_params.get('category', None)
@@ -235,6 +245,8 @@ def list_products(request):
 )
 @api_view(['PUT', 'PATCH'])  
 @permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
 def update_product(request, product_id):
     seller = request.user.marketuser  
 
@@ -261,6 +273,8 @@ def update_product(request, product_id):
 )
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
 def delete_product(request, product_id):
     seller = request.user.marketuser  # Ensure the user is the seller
     try:
@@ -281,6 +295,8 @@ def delete_product(request, product_id):
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
 def get_seller_products(request):
     seller = request.user.marketuser
     products = Product.objects.filter(seller=seller).order_by('-upload_date')
