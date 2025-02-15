@@ -5,9 +5,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
-from .models import Product, ProductPhoto, Bid,Notificationbid
+from .models import Product, ProductPhoto, Bid,Notificationbid,Listing
 from .serializer import ProductSerializer, ProductPhotoSerializer, BidSerializer
+from django.shortcuts import get_object_or_404
 from decorators import verified_user_required ,not_banned_user_required
+from .utils import send_real_time_notification
 @swagger_auto_schema(
     method='post',
     operation_description="Create a new product. The authenticated user will be set as the seller.",
@@ -203,9 +205,8 @@ class ProductPagination(PageNumberPagination):
         200: openapi.Response('Paginated list of products', ProductSerializer(many=True)),
     }
 )
+
 @api_view(['GET'])
-@verified_user_required
-@not_banned_user_required
 def list_products(request):
     sale_type = request.query_params.get('sale_type', None)
     category = request.query_params.get('category', None)
@@ -302,3 +303,115 @@ def get_seller_products(request):
     products = Product.objects.filter(seller=seller).order_by('-upload_date')
     serializer = ProductSerializer(products, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
+def purchase_product(request, product_id):
+    buyer = request.user.marketuser  # Authenticated user
+
+    # Get the product
+    product = get_object_or_404(Product, id=product_id, sale_type='simple')
+
+    # Prevent the seller from purchasing their own product
+    if product.seller == buyer:
+        return Response({"error": "You cannot purchase your own product."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Ensure the product is available for sale
+    if product.sold:
+        return Response({"error": "This product has already been sold."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Create a new listing
+    listing = Listing.objects.create(
+        buyer=buyer,
+        product=product,
+        quantity=1,  # Assuming it's a single-unit purchase
+        is_payed=False  # Payment is not yet confirmed
+    )
+
+    # Notify the seller
+    seller_message = f"Your product '{product.title}' has been requested for purchase by {buyer.profile.username}."
+    Notificationbid.objects.create(
+        recipient=product.seller,
+        message=seller_message,
+        bid=None  # Since this isn't a bid-related notification
+    )
+
+    send_real_time_notification(product.seller, seller_message)
+
+    return Response({
+        "message": "Purchase request sent successfully.",
+        "listing_id": listing.id
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
+def accept_related_listings(request, listing_id):
+    listing = get_object_or_404(Listing, id=listing_id)
+
+    if listing.product.seller != request.user.marketuser:
+        return Response({"error": "You are not authorized to mark this listing as paid."}, status=status.HTTP_403_FORBIDDEN)
+    listing.is_payed = True
+    listing.save()
+    message = f"Your payment for '{listing.product.title}' has been confirmed by the seller."
+    send_real_time_notification(listing.buyer, message)
+
+    return Response({"message": "Listing marked as paid successfully."}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
+def get_seller_listings(request):
+    """Get all listings where the user is the seller (to approve payment)."""
+    user = request.user.marketuser  # Get the authenticated MarketUser
+
+    # Get listings where the user is the seller
+    seller_listings = Listing.objects.filter(product__seller=user).select_related("product", "buyer")
+
+    listings_data = [
+        {
+            "id": listing.id,
+            "product": listing.product.title,
+            "buyer": listing.buyer.profile.username,
+            "purchase_date": listing.purchase_date,
+            "quantity": listing.quantity,
+            "is_payed": listing.is_payed
+        }
+        for listing in seller_listings
+    ]
+
+    return Response({"seller_listings": listings_data}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
+def get_buyer_purchases(request):
+    """Get all listings where the user is the buyer (to see purchases)."""
+    user = request.user.marketuser  # Get the authenticated MarketUser
+
+    # Get listings where the user is the buyer
+    buyer_listings = Listing.objects.filter(buyer=user).select_related("product")
+
+    listings_data = [
+        {
+            "id": listing.id,
+            "product": listing.product.title,
+            "seller": listing.product.seller.profile.username,
+            "purchase_date": listing.purchase_date,
+            "quantity": listing.quantity,
+            "is_payed": listing.is_payed
+        }
+        for listing in buyer_listings
+    ]
+
+    return Response({"buyer_purchases": listings_data}, status=status.HTTP_200_OK)

@@ -164,11 +164,8 @@ def verify_otp(request):
 
     market_user = serializer.save()
     
-    # ✅ Generate JWT tokens
     refresh = RefreshToken.for_user(market_user.profile)
     access = refresh.access_token
-
-    # ✅ Clean up cache
     cache.delete(f"user_data_{phone}")
 
     return Response({

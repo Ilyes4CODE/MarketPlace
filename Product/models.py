@@ -3,7 +3,6 @@ from Auth.models import MarketUser
 from django.utils import timezone
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from .utils import send_real_time_notification
 
 # Create your models here.
 
@@ -64,7 +63,8 @@ class Listing(models.Model):
     buyer = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='purchases')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='listings')
     purchase_date = models.DateTimeField(default=timezone.now) 
-    quantity = models.PositiveIntegerField(default=1) 
+    quantity = models.PositiveIntegerField(default=1)
+    is_payed = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.buyer.profile.username} purchased {self.product.title} on {self.purchase_date}"
@@ -80,7 +80,8 @@ class Notificationbid(models.Model):
     bid = models.ForeignKey(
         Bid,
         on_delete=models.CASCADE,
-        related_name='notifications'
+        related_name='notifications',
+        null=True
     )
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

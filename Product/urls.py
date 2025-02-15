@@ -10,4 +10,8 @@ urlpatterns = [
     path('<int:product_id>/bids/', views.get_product_bids, name='get_product_bids'),
     path('<int:product_id>/bid/', views.place_bid, name='place_bid'),
     path('<int:product_id>/<int:bid_id>/end_bid/', views.end_bid, name='end_bid'),
+    path('<int:product_id>/Purchase/',views.purchase_product),
+    path('listings/accept/<int:listing_id>/', views.accept_related_listings, name='accept_listing'),
+    path('listings/seller/', views.get_seller_listings, name='seller_listings'),
+    path('listings/buyer/', views.get_buyer_purchases, name='buyer_purchases'),
 ]

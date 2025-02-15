@@ -59,6 +59,7 @@ class MarketUserSerializer(serializers.ModelSerializer):
             name=validated_data.get('name'),
             phone=validated_data.get('phone'),
             email=email,
+            is_verified = True
         )
 
         return market_user
