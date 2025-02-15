@@ -34,7 +34,7 @@ class Product(models.Model):
     sale_type = models.CharField(max_length=10, choices=SALE_TYPE_CHOICES, default='simple')
     is_approved = models.BooleanField(default=False)
     sold = models.BooleanField(default=False)
-
+    
     def __str__(self):
         return self.title
     
