@@ -9,7 +9,7 @@ from .models import Product, ProductPhoto, Bid,Notificationbid,Listing
 from .serializer import ProductSerializer, ProductPhotoSerializer, BidSerializer
 from django.shortcuts import get_object_or_404
 from decorators import verified_user_required ,not_banned_user_required
-from .utils import send_real_time_notification
+from .utils import send_real_time_notification,start_conversation
 @swagger_auto_schema(
     method='post',
     operation_description="Create a new product. The authenticated user will be set as the seller.",
@@ -142,7 +142,7 @@ def end_bid(request, product_id, bid_id):
         return Response({"error": "Selected bid not found or does not belong to this product."}, status=status.HTTP_404_NOT_FOUND)
 
     # Mark the selected bid as the winner
-    selected_bid.buyer = True
+    selected_bid.winner = True
     selected_bid.save()
 
     # Update the product status to sold
@@ -151,12 +151,8 @@ def end_bid(request, product_id, bid_id):
 
     # Create a notification for the winner
     notification_message = f"Congratulations! Your bid of {selected_bid.amount} on {product.title} has won."
-    Notificationbid.objects.create(
-        recipient=selected_bid.buyer,
-        message=notification_message,
-        bid=selected_bid,
-    )
-
+    send_real_time_notification(selected_bid.buyer,notification_message)
+    start_conversation(selected_bid.product.seller,selected_bid.buyer,selected_bid.product)
     return Response({
         "message": "Bidding ended successfully.",
         "winning_bid": BidSerializer(selected_bid).data
@@ -341,7 +337,6 @@ def purchase_product(request, product_id):
     )
 
     send_real_time_notification(product.seller, seller_message)
-
     return Response({
         "message": "Purchase request sent successfully.",
         "listing_id": listing.id

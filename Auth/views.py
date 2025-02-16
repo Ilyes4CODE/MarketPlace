@@ -10,7 +10,10 @@ from drf_yasg import openapi
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.cache import cache
 import logging
-
+from django.contrib.auth.models import Group
+from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.csrf import csrf_exempt
 
 
 phone_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Phone number of the user")
@@ -65,6 +68,9 @@ def register_market_user(request):
     if not phone or not email or not name or not password:
         return Response({"error": "Phone, email, name, and password are required."}, status=status.HTTP_400_BAD_REQUEST)
 
+
+    if MarketUser.objects.filter(phone=phone).exists():
+        return Response({'error':'phone is already existed'},status=status.HTTP_302_FOUND)
     # Save user data temporarily in cache before OTP verification
     user_data = {
         'phone': phone,
@@ -213,4 +219,22 @@ def update_user_profile(request):
         return Response(serializer.data, status=status.HTTP_200_OK)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+
+@api_view(['GET'])
+@login_required
+def user_info(request):
+    """Returns authenticated user details, including group membership."""
+    user = request.user
+    market_user = MarketUser.objects.get(profile=user)
+
+    # Check if the user is in the admin group
+    is_admin = user.groups.filter(name="Admin").exists()
+    return Response({
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "is_admin": is_admin
+    })
+    
 

@@ -1,7 +1,7 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from .models import Notificationbid
-
+from Chats.models import Conversation
 def send_real_time_notification(user, message):
     notification = Notificationbid.objects.create(
         recipient=user,
@@ -16,4 +16,12 @@ def send_real_time_notification(user, message):
             "message": message,
             "created_at": notification.created_at.strftime("%Y-%m-%d %H:%M:%S")  # ✅ Format timestamp
         }
+    )
+
+
+def start_conversation(seller,buyer,product):
+    Conversation.objects.create(
+        seller = seller,
+        buyer = buyer,
+        product = product
     )
