@@ -3,7 +3,7 @@ from Auth.models import MarketUser
 from django.utils import timezone
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-
+from datetime import timedelta
 # Create your models here.
 
 class Category(models.Model):
@@ -24,19 +24,48 @@ class Product(models.Model):
         ('bid', 'Bid'),
     ]
 
-    seller = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='products') 
+    CURRENCY_CHOICES = [
+        ('USD', 'US Dollar ($)'),
+        ('LBP', 'Lebanese Lira (ل.ل)'),
+    ]
+
+    seller = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='products')
     title = models.CharField(max_length=100)
     description = models.TextField()
-    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
-    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # Optional for bidding
-    upload_date = models.DateTimeField(default=timezone.now) 
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, null=True, related_name='products')
+    
+    # Simple Product Fields
+    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+
+    # Bid Product Fields
+    starting_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    buy_now_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    duration = models.IntegerField(null=True, blank=True)  # Duration in hours
+    bid_end_time = models.DateTimeField(null=True, blank=True)  # Time when bidding should close
+    closed = models.BooleanField(default=False)  # True if the bid has ended
+
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='USD')
+    upload_date = models.DateTimeField(default=timezone.now)
     condition = models.CharField(max_length=10, choices=CONDITION_CHOICES, default='new')
     sale_type = models.CharField(max_length=10, choices=SALE_TYPE_CHOICES, default='simple')
     is_approved = models.BooleanField(default=False)
+    location = models.CharField(max_length=50, null=True)
     sold = models.BooleanField(default=False)
 
+    def save(self, *args, **kwargs):
+        if self.sale_type == 'bid' and self.duration and not self.bid_end_time:
+            self.bid_end_time = self.upload_date + timedelta(hours=self.duration)  # Set end time
+
+        super().save(*args, **kwargs)
+
+    def check_bid_status(self):
+        """Automatically closes the bid if time is up."""
+        if self.sale_type == 'bid' and self.bid_end_time and timezone.now() >= self.bid_end_time:
+            self.closed = True
+            self.save()
+
     def __str__(self):
-        return self.title
+        return f"{self.title} - {self.price or self.starting_price} ({'Closed' if self.closed else 'Active'})"
     
 
 class ProductPhoto(models.Model):

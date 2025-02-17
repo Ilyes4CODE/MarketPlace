@@ -57,38 +57,27 @@ verification_id_schema = openapi.Schema(type=openapi.TYPE_STRING, description="V
         )
     }
 )
+@api_view(['POST'])
 def register_market_user(request):
-    # Get user data from the request
     phone = request.data.get('phone')
     email = request.data.get('email')
     name = request.data.get('name')
     password = request.data.get('password')
-
-    # Basic validation
     if not all([phone, email, name, password]):
         return Response({"error": "رقم الهاتف، البريد الإلكتروني، الاسم، وكلمة المرور مطلوبة."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Validate phone number format (supports international numbers starting with +)
     if not re.match(r'^\+\d{7,15}$', phone):
         return Response({"error": "تنسيق رقم الهاتف غير صحيح. يجب أن يبدأ بـ + متبوعًا بـ 7 إلى 15 رقمًا."}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Validate email format
     if not re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', email):
         return Response({"error": "تنسيق البريد الإلكتروني غير صالح."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Validate password length (exactly 6 characters)
     if len(password) != 6:
         return Response({"error": "يجب أن تتكون كلمة المرور من 6 أحرف بالضبط."}, status=status.HTTP_400_BAD_REQUEST)
-
-    # Check if phone number already exists
     if MarketUser.objects.filter(phone=phone).exists():
         return Response({"error": "رقم الهاتف مسجل بالفعل."}, status=status.HTTP_302_FOUND)
-
-    # Check if email already exists
     if MarketUser.objects.filter(email=email).exists():
         return Response({"error": "البريد الإلكتروني مسجل بالفعل."}, status=status.HTTP_302_FOUND)
 
-    # Save user data temporarily in cache before OTP verification
     user_data = {
         'phone': phone,
         'email': email,

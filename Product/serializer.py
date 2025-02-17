@@ -13,10 +13,11 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = [
-            'id', 'title', 'description', 'price', 'condition', 
-            'is_approved', 'sale_type', 'seller', 'photos'
+            'id', 'title', 'description', 'price', 'starting_price', 'buy_now_price', 
+            'duration', 'bid_end_time', 'closed', 'currency', 'condition', 'location', 
+            'is_approved', 'sale_type', 'seller', 'photos','category'
         ]
-        read_only_fields = ['id', 'is_approved', 'seller']
+        read_only_fields = ['id', 'is_approved', 'seller', 'bid_end_time', 'closed']
 
 
 class BidSerializer(serializers.ModelSerializer):

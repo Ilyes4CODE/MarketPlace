@@ -10,24 +10,115 @@ from .serializer import ProductSerializer, ProductPhotoSerializer, BidSerializer
 from django.shortcuts import get_object_or_404
 from decorators import verified_user_required ,not_banned_user_required
 from .utils import send_real_time_notification,start_conversation
+from datetime import timedelta  
+from django.utils import timezone  
+from .models import Category
+
+
+
 @swagger_auto_schema(
     method='post',
-    operation_description="Create a new product. The authenticated user will be set as the seller.",
-    request_body=ProductSerializer,
+    operation_description="Create a new bid product",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['title', 'description', 'starting_price', 'buy_now_price', 'duration', 'condition', 'location', 'currency'],
+        properties={
+            'title': openapi.Schema(type=openapi.TYPE_STRING, description="Name of the product"),
+            'description': openapi.Schema(type=openapi.TYPE_STRING, description="Detailed description of the product"),
+            'starting_price': openapi.Schema(type=openapi.TYPE_NUMBER, format=openapi.FORMAT_DECIMAL, description="Initial bidding price"),
+            'buy_now_price': openapi.Schema(type=openapi.TYPE_NUMBER, format=openapi.FORMAT_DECIMAL, description="Price to buy instantly"),
+            'duration': openapi.Schema(type=openapi.TYPE_INTEGER, description="Duration of the bid in hours"),
+            'condition': openapi.Schema(type=openapi.TYPE_STRING, enum=['new', 'used'], description="Product condition"),
+            'location': openapi.Schema(type=openapi.TYPE_STRING, description="Product location"),
+            'currency': openapi.Schema(type=openapi.TYPE_STRING, enum=['USD', 'LBP'], description="Currency (USD or LBP)"),
+            'photos': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Items(type=openapi.TYPE_STRING, format=openapi.FORMAT_BINARY), description="Product photos"),
+        },
+    ),
     responses={
-        201: openapi.Response('Product created successfully', ProductSerializer),
-        400: openapi.Response('Invalid data provided'),
+        201: openapi.Response("Product created successfully", ProductSerializer),
+        400: "Bad Request - Missing or invalid fields",
+        401: "Unauthorized - User not authenticated",
+        403: "Forbidden - User not verified or banned",
     }
 )
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @verified_user_required
 @not_banned_user_required
-def create_product(request):
+def create_bid_product(request):
     seller = request.user.marketuser
     data = request.data
 
+    # Ensure this is a bid
+    data['sale_type'] = 'bid'
+
+    # Validate required fields for a bid
+    required_fields = ['starting_price', 'buy_now_price', 'duration']
+    for field in required_fields:
+        if field not in data or not data[field]:
+            return Response({field: "This field is required for bid products."}, status=status.HTTP_400_BAD_REQUEST)
+
     product_serializer = ProductSerializer(data=data, context={'seller': seller})
+    if product_serializer.is_valid():
+        product = product_serializer.save(seller=seller)
+        product.bid_end_time = timezone.now() + timedelta(hours=int(data['duration']))
+        product.save()
+
+        # Save uploaded photos
+        photos = request.FILES.getlist('photos')
+        for photo in photos:
+            ProductPhoto.objects.create(product=product, photo=photo)
+
+        return Response(product_serializer.data, status=status.HTTP_201_CREATED)
+
+    return Response(product_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="Create a new simple product (non-bidding product).",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['title', 'description', 'price', 'condition', 'location', 'currency', 'category'],
+        properties={
+            'title': openapi.Schema(type=openapi.TYPE_STRING, description="Name of the product"),
+            'description': openapi.Schema(type=openapi.TYPE_STRING, description="Detailed description of the product"),
+            'price': openapi.Schema(type=openapi.TYPE_NUMBER, format=openapi.FORMAT_DECIMAL, description="Price of the product"),
+            'condition': openapi.Schema(type=openapi.TYPE_STRING, enum=['new', 'used'], description="Product condition"),
+            'location': openapi.Schema(type=openapi.TYPE_STRING, description="Product location"),
+            'currency': openapi.Schema(type=openapi.TYPE_STRING, enum=['USD', 'LBP'], description="Currency (USD or LBP)"),
+            'category': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID of the product category"),
+            'photos': openapi.Schema(
+                type=openapi.TYPE_ARRAY,
+                items=openapi.Items(type=openapi.TYPE_STRING, format=openapi.FORMAT_BINARY),
+                description="Array of product photos (optional)"
+            ),
+        },
+    ),
+    responses={
+        201: openapi.Response("Product created successfully", ProductSerializer),
+        400: "Bad Request - Missing or invalid fields",
+        401: "Unauthorized - User not authenticated",
+        403: "Forbidden - User not verified or banned",
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
+def create_simple_product(request):
+    seller = request.user.marketuser
+    data = request.data
+
+    data['sale_type'] = 'simple'
+    category = Category.objects.get(pk=data['category'])
+    if 'price' not in data or not data['price']:
+        return Response({"price": "Price is required for simple products."}, status=status.HTTP_400_BAD_REQUEST)
+
+    product_serializer = ProductSerializer(data=data, context={'seller': seller,'category':category})
     if product_serializer.is_valid():
         product = product_serializer.save(seller=seller)
         photos = request.FILES.getlist('photos')
@@ -35,6 +126,7 @@ def create_product(request):
             ProductPhoto.objects.create(product=product, photo=photo)
 
         return Response(product_serializer.data, status=status.HTTP_201_CREATED)
+
     return Response(product_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
