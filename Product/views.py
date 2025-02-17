@@ -53,7 +53,7 @@ def create_bid_product(request):
     data['sale_type'] = 'bid'
 
     # Validate required fields for a bid
-    required_fields = ['starting_price', 'buy_now_price', 'duration']
+    required_fields = ['starting_price', 'duration']
     for field in required_fields:
         if field not in data or not data[field]:
             return Response({field: "This field is required for bid products."}, status=status.HTTP_400_BAD_REQUEST)
