@@ -73,7 +73,7 @@ def manage_bid(request, bid_id):
 @permission_classes([IsAuthenticated])
 @admin_required
 def get_all_users(request):
-    # استبعاد المستخدمين الذين ينتمون إلى مجموعة "Admin"
+    
     users = MarketUser.objects.exclude(profile__groups__name="Admin")
     
     serializer = UserSerializer(users, many=True)
