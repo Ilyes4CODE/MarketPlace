@@ -1,15 +1,15 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User, Group
 from .models import MarketUser
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework.exceptions import AuthenticationFailed
 
 class MarketUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True,
         min_length=6,
-        max_length=6,
         error_messages={
-            "min_length": "يجب أن تحتوي كلمة المرور على 6 أحرف بالضبط.",
-            "max_length": "يجب أن تحتوي كلمة المرور على 6 أحرف بالضبط."
+            "min_length": "يجب أن تحتوي كلمة المرور على الاقل 6 أحرف .",
         }
     )
     email = serializers.EmailField(
@@ -90,3 +90,20 @@ class UpdateUserSerializer(serializers.ModelSerializer):
         instance.profile.save() 
         instance.save() 
         return instance
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        username = attrs.get("username")
+        password = attrs.get("password")
+
+        # التحقق مما إذا كان اسم المستخدم موجودًا
+        user = User.objects.filter(username=username).first()
+        if not user:
+            raise AuthenticationFailed("⚠️ اسم المستخدم غير موجود. الرجاء التحقق من المدخلات.")
+
+        # التحقق من كلمة المرور
+        if not user.check_password(password):
+            raise AuthenticationFailed("❌ كلمة المرور غير صحيحة. الرجاء المحاولة مرة أخرى.")
+
+        # إذا كان كل شيء صحيحًا، تابع التحقق العادي
+        return super().validate(attrs)

@@ -11,7 +11,7 @@ from Auth.serializer import UserSerializer
 from decorators import admin_required
 from Product.models import Product
 from rest_framework import status
-from Product.utils import send_real_time_notification
+from Product.utils import send_real_time_notification,start_conversation
 
 class UserNotificationsView(ListAPIView):
     serializer_class = NotificationBidSerializer
@@ -29,25 +29,42 @@ class UserNotificationsView(ListAPIView):
 def manage_bid(request, bid_id):
     bid = get_object_or_404(Bid, id=bid_id)
     action = request.data.get("action")  # "accept" or "reject"
-    seller = MarketUser.objects.get(profile=bid.product.seller.profile.pk)  # Ensure 'user' field exists in MarketUser
-    buyer = bid.buyer 
+    seller = bid.product.seller
+    buyer = bid.buyer
 
     if action == "accept":
         bid.status = "accepted"
-        message_seller = f"A new bid of {bid.amount} has been placed on your product: {bid.product.title}."
-        message_buyer = f"Your bid of {bid.amount} has been accepted by the admin."
-        send_real_time_notification(seller, message_seller)  
-        send_real_time_notification(buyer, message_buyer)
+
+        # 🚀 **Check if this bid meets/exceeds `buy_now_price`**
+        if bid.amount >= bid.product.buy_now_price:
+            bid.product.closed = True
+            bid.product.sold = True
+            bid.product.save()
+
+            # Mark this bid as the winner and reject all others
+            Bid.objects.filter(product=bid.product).update(status="rejected", winner=False)
+            bid.winner = True
+            bid.save()
+
+            # 🔔 Now send notifications (delayed until admin approval)
+            send_real_time_notification(seller, f"Your product '{bid.product.title}' has been sold for {bid.amount} {bid.product.currency}!")
+            send_real_time_notification(buyer, f"Congratulations! You won the bid for '{bid.product.title}' at {bid.amount} {bid.product.currency}.")
+            
+            # Start the conversation between seller & buyer
+            start_conversation(seller, buyer, bid.product)
+        
+        else:
+            # Notify only about bid acceptance
+            send_real_time_notification(seller, f"A new bid of {bid.amount} has been placed on your product: {bid.product.title}.")
+            send_real_time_notification(buyer, f"Your bid of {bid.amount} has been accepted by the admin.")
+
     elif action == "reject":
         bid.status = "rejected"
-        message_buyer = f"Your bid of {bid.amount} has been rejected by the admin."
-        send_real_time_notification(buyer, message_buyer)
+        send_real_time_notification(buyer, f"Your bid of {bid.amount} has been rejected by the admin.")
     else:
         return Response({"error": "Invalid action"}, status=400)
 
     bid.save()
-
-    
     return Response({"message": f"Bid {action}ed successfully"})
 
 
@@ -56,7 +73,9 @@ def manage_bid(request, bid_id):
 @permission_classes([IsAuthenticated])
 @admin_required
 def get_all_users(request):
-    users = MarketUser.objects.all()
+    # استبعاد المستخدمين الذين ينتمون إلى مجموعة "Admin"
+    users = MarketUser.objects.exclude(profile__groups__name="Admin")
+    
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data)
 
@@ -66,6 +85,8 @@ def get_all_users(request):
 @admin_required
 def approve_products(request,product_id):
     product = Product.objects.get(pk=product_id)
+    if product.is_approved :
+        return Response({'info':'already approved'},status=status.HTTP_404_NOT_FOUND)
     product.is_approved = True
     product.save()
     return Response({'info':'product approved successfully ! '},status=status.HTTP_202_ACCEPTED)

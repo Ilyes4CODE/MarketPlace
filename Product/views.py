@@ -13,9 +13,8 @@ from .utils import send_real_time_notification,start_conversation
 from datetime import timedelta  
 from django.utils import timezone  
 from .models import Category
-
-
-
+from django.db.models import Max
+from Auth.models import MarketUser
 @swagger_auto_schema(
     method='post',
     operation_description="Create a new bid product",
@@ -130,87 +129,55 @@ def create_simple_product(request):
     return Response(product_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@swagger_auto_schema(
-    method='post',
-    operation_description="Place a bid on a product.",
-    request_body=BidSerializer,
-    responses={
-        201: openapi.Response('Bid placed successfully', BidSerializer),
-        400: openapi.Response('Invalid data provided'),
-    }
-)
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @verified_user_required
 @not_banned_user_required
 def place_bid(request, product_id):
-    # Check if the product exists and is eligible for bidding
+    # Get the product and ensure it’s a bid product
     product = Product.objects.filter(id=product_id, sale_type='bid', is_approved=True).first()
     if not product:
         return Response({"error": "Product not available for bidding."}, status=status.HTTP_404_NOT_FOUND)
 
-    # Create a mutable copy of the request data
-    data = request.data.copy()
-    data['buyer'] = request.user.marketuser.id  # Fix: Use 'buyer' instead of 'bidder'
-    data['product'] = product.pk  # Add the product's ID
+    # Prevent the seller from bidding on their own product
+    if product.seller == request.user.marketuser:
+        return Response({"error": "You cannot bid on your own product."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Pass the modified data to the serializer
-    bid_serializer = BidSerializer(data=data)
-    if bid_serializer.is_valid():
-        bid_serializer.save(buyer=request.user.marketuser, product=product)  # Fix: Use 'buyer'
-        return Response(bid_serializer.data, status=status.HTTP_201_CREATED)
+    # Check if bidding has ended
+    if product.closed or (product.bid_end_time and timezone.now() >= product.bid_end_time):
+        product.closed = True
+        product.save()
+        return Response({"error": "Bidding for this product has ended."}, status=status.HTTP_400_BAD_REQUEST)
 
-    return Response(bid_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    # Get the bid amount
+    bid_amount = request.data.get("amount")
+    if not bid_amount:
+        return Response({"error": "Bid amount is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    bid_amount = float(bid_amount)
+
+    # Get the highest accepted bid (or starting price if no bids exist)
+    highest_bid = Bid.objects.filter(product=product, status="accepted").aggregate(Max('amount'))['amount__max'] or product.starting_price
+    if bid_amount <= highest_bid:
+        return Response({"error": f"Your bid must be higher than {highest_bid} {product.currency}."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Create the new bid with `pending` status (Admin will approve)
+    bid = Bid.objects.create(
+        product=product,
+        buyer=request.user.marketuser,
+        amount=bid_amount,
+        status="pending"  # Pending approval
+    )
+
+    # Notify admins for bid approval
+    admin_users = MarketUser.objects.filter(profile__groups__name="Admin")
+    for admin in admin_users:
+        send_real_time_notification(admin, f"New bid of {bid_amount} {product.currency} placed on '{product.title}'. Please review and approve.")
+
+    return Response({"message": "Bid placed successfully and is pending admin approval.", "bid": BidSerializer(bid).data}, status=status.HTTP_201_CREATED)
 
 
-@swagger_auto_schema(
-    method='post',
-    operation_description="End the bidding process for a product and select a winning bid.",
-    # request_body=openapi.Schema(
-    #     type=openapi.TYPE_OBJECT,
-    #     properties={
-    #         'bid_id': openapi.Schema(
-    #             type=openapi.TYPE_INTEGER,
-    #             description="ID of the selected bid to mark as the winner."
-    #         ),
-    #     },
-    #     required=['bid_id']
-    # ),
-    responses={
-        200: openapi.Response(
-            description="Bidding ended successfully.",
-            examples={
-                "application/json": {
-                    "message": "Bidding ended successfully.",
-                    "winning_bid": {
-                        "id": 123,
-                        "product": 1,
-                        "bidder": 2,
-                        "amount": "500.00",
-                        "bid_date": "2025-01-28T15:30:00Z",
-                        "winner": True
-                    }
-                }
-            }
-        ),
-        400: openapi.Response(
-            description="Bad Request - Missing or invalid bid_id.",
-            examples={
-                "application/json": {
-                    "error": "No bid_id provided. Please select a bid to end the auction."
-                }
-            }
-        ),
-        404: openapi.Response(
-            description="Product or Bid Not Found.",
-            examples={
-                "application/json": {
-                    "error": "Product not found or you do not have permission to end the bid."
-                }
-            }
-        ),
-    }
-)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @verified_user_required
@@ -228,27 +195,93 @@ def end_bid(request, product_id, bid_id):
         return Response({"error": "No bid_id provided. Please select a bid to end the auction."}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        # Retrieve the selected bid
-        selected_bid = Bid.objects.get(id=bid_id, product=product)
+        # Retrieve the selected bid and ensure it's an approved bid
+        selected_bid = Bid.objects.get(id=bid_id, product=product, status="accepted")
     except Bid.DoesNotExist:
-        return Response({"error": "Selected bid not found or does not belong to this product."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Selected bid not found, not approved, or does not belong to this product."}, status=status.HTTP_404_NOT_FOUND)
 
     # Mark the selected bid as the winner
     selected_bid.winner = True
     selected_bid.save()
 
-    # Update the product status to sold
+    # Mark the product as sold and closed
     product.sold = True
+    product.closed = True
     product.save()
 
-    # Create a notification for the winner
-    notification_message = f"Congratulations! Your bid of {selected_bid.amount} on {product.title} has won."
-    send_real_time_notification(selected_bid.buyer,notification_message)
-    start_conversation(selected_bid.product.seller,selected_bid.buyer,selected_bid.product)
+    # Reject all other bids for this product
+    Bid.objects.filter(product=product).exclude(id=selected_bid.id).update(status="rejected", winner=False)
+
+    # 🔔 Notify the winner
+    send_real_time_notification(
+        selected_bid.buyer, 
+        f"🎉 Congratulations! Your bid of {selected_bid.amount} {product.currency} on '{product.title}' has won."
+    )
+
+    # 🔔 Notify the seller
+    send_real_time_notification(
+        product.seller, 
+        f"✅ You have successfully sold '{product.title}' for {selected_bid.amount} {product.currency}."
+    )
+
+    # 💬 Start a conversation between the seller and the winner
+    start_conversation(product.seller, selected_bid.buyer, product)
+
+    # 🔍 Find all admin users
+    admin_users = MarketUser.objects.filter(user__groups__name="Admin")
+
+    # 🔔 Notify admins that the bid has ended
+    for admin in admin_users:
+        send_real_time_notification(
+            admin, 
+            f"📢 Auction for '{product.title}' has ended. Winning bid: {selected_bid.amount} {product.currency}."
+        )
+
     return Response({
         "message": "Bidding ended successfully.",
         "winning_bid": BidSerializer(selected_bid).data
-    })
+    }, status=status.HTTP_200_OK)
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
+def seller_products_history(request):
+    """
+    Retrieve all products listed by the authenticated seller.
+    """
+    seller = request.user.marketuser
+    products = Product.objects.filter(seller=seller).order_by('-created_at')
+
+    if not products.exists():
+        return Response({"message": "No products found."}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(ProductSerializer(products, many=True).data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
+def product_bids_history(request, product_id):
+    
+    seller = request.user.marketuser
+
+    try:
+        product = Product.objects.get(id=product_id, seller=seller, sale_type='bid')
+    except Product.DoesNotExist:
+        return Response({"error": "Product not found or you do not have permission to view bids."}, status=status.HTTP_404_NOT_FOUND)
+
+    bids = Bid.objects.filter(product=product).order_by('-amount')
+
+    if not bids.exists():
+        return Response({"message": "No bids placed on this product yet."}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(BidSerializer(bids, many=True).data, status=status.HTTP_200_OK)
+
+
 
 @swagger_auto_schema(
     method='get',

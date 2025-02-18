@@ -1,7 +1,7 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from .serializer import MarketUserSerializer, UserSerializer,UpdateUserSerializer
+from .serializer import MarketUserSerializer, UserSerializer,UpdateUserSerializer,CustomTokenObtainPairSerializer
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -15,6 +15,8 @@ from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 import re
+from rest_framework_simplejwt.views import TokenObtainPairView
+
 
 phone_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Phone number of the user")
 email_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Email of the user")
@@ -241,4 +243,7 @@ def user_info(request):
         "is_admin": is_admin
     })
     
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
 
