@@ -46,16 +46,28 @@ from Auth.models import MarketUser
 @not_banned_user_required
 def create_bid_product(request):
     seller = request.user.marketuser
-    data = request.data
+
+    # Convert request.data to a mutable dictionary
+    data = request.data.copy()  # ✅ This makes it mutable
 
     # Ensure this is a bid
-    data['sale_type'] = 'bid'
+    data['sale_type'] = 'مزاد'
 
     # Validate required fields for a bid
     required_fields = ['starting_price', 'duration']
     for field in required_fields:
         if field not in data or not data[field]:
-            return Response({field: "This field is required for bid products."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({field: f"حقل {field} مطلوب لإضافة منتج في المزاد."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Get uploaded photos
+    photos = request.FILES.getlist('photos')
+
+    # Validate that at least 1 photo and at most 5 photos are provided
+    if not photos:
+        return Response({"photos": "يجب تحميل صورة واحدة على الأقل."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if len(photos) > 5:
+        return Response({"photos": "يمكنك تحميل 5 صور كحد أقصى."}, status=status.HTTP_400_BAD_REQUEST)
 
     product_serializer = ProductSerializer(data=data, context={'seller': seller})
     if product_serializer.is_valid():
@@ -64,7 +76,6 @@ def create_bid_product(request):
         product.save()
 
         # Save uploaded photos
-        photos = request.FILES.getlist('photos')
         for photo in photos:
             ProductPhoto.objects.create(product=product, photo=photo)
 
@@ -114,27 +125,46 @@ def create_simple_product(request):
 
     data['sale_type'] = 'عادي'
     
-    try:
-        category = Category.objects.get(pk=data['category'])
-    except Category.DoesNotExist:
-        return Response({"category": "Invalid category ID."}, status=status.HTTP_400_BAD_REQUEST)
+    # Validate category existence and type
+    category_id = data.get('category')
+    if not category_id:
+        return Response({"category": "التصنيف مطلوب."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if not isinstance(category_id, int):
+        category_id = int(category_id)
+        # return Response({"category": "يجب أن يكون التصنيف رقمًا صحيحًا."}, status=status.HTTP_400_BAD_REQUEST)
 
+    try:
+        category = Category.objects.get(pk=category_id)
+    except Category.DoesNotExist:
+        return Response({"category": "رقم التصنيف غير صالح."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Validate price
     if 'price' not in data or not data['price']:
-        return Response({"price": "Price is required for simple products."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"price": "السعر مطلوب للمنتجات العادية."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Get uploaded photos
+    photos = request.FILES.getlist('photos')
+
+    # Validate that at least 1 photo and at most 5 photos are provided
+    if not photos:
+        return Response({"photos": "يجب تحميل صورة واحدة على الأقل."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    if len(photos) > 5:
+        return Response({"photos": "يمكنك تحميل 5 صور كحد أقصى."}, status=status.HTTP_400_BAD_REQUEST)
 
     product_serializer = ProductSerializer(data=data, context={'seller': seller, 'category': category})
 
     if product_serializer.is_valid():
         product = product_serializer.save(seller=seller)
-        photos = request.FILES.getlist('photos')
 
+        # Save uploaded photos
         for photo in photos:
             ProductPhoto.objects.create(product=product, photo=photo)
 
         return Response(product_serializer.data, status=status.HTTP_201_CREATED)
 
     return Response(product_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
