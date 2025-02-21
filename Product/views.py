@@ -47,9 +47,9 @@ from Auth.models import MarketUser
 def create_bid_product(request):
     seller = request.user.marketuser
 
-    # Convert request.data to a mutable dictionary
-    data = request.data.copy()  # ✅ This makes it mutable
-
+    # Extracting non-file data separately
+    data = {key: value for key, value in request.data.items() if key not in request.FILES}
+    
     # Ensure this is a bid
     data['sale_type'] = 'مزاد'
 
@@ -121,38 +121,37 @@ def create_bid_product(request):
 @not_banned_user_required
 def create_simple_product(request):
     seller = request.user.marketuser
-    data = request.data.copy()  # Create a mutable copy of request.data
+
+    # Extracting non-file data separately
+    data = {key: value for key, value in request.data.items() if key not in request.FILES}
 
     data['sale_type'] = 'عادي'
-    
+
     # Validate category existence and type
     category_id = data.get('category')
     if not category_id:
         return Response({"category": "التصنيف مطلوب."}, status=status.HTTP_400_BAD_REQUEST)
-    
-    if not isinstance(category_id, int):
-        category_id = int(category_id)
-        # return Response({"category": "يجب أن يكون التصنيف رقمًا صحيحًا."}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
+        category_id = int(category_id)  # Ensure it's an integer
         category = Category.objects.get(pk=category_id)
-    except Category.DoesNotExist:
+    except (ValueError, Category.DoesNotExist):
         return Response({"category": "رقم التصنيف غير صالح."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Validate price
+    # Validate price field
     if 'price' not in data or not data['price']:
         return Response({"price": "السعر مطلوب للمنتجات العادية."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Get uploaded photos
+    # Handle file uploads separately
     photos = request.FILES.getlist('photos')
 
-    # Validate that at least 1 photo and at most 5 photos are provided
     if not photos:
         return Response({"photos": "يجب تحميل صورة واحدة على الأقل."}, status=status.HTTP_400_BAD_REQUEST)
-    
+
     if len(photos) > 5:
         return Response({"photos": "يمكنك تحميل 5 صور كحد أقصى."}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Serialize product
     product_serializer = ProductSerializer(data=data, context={'seller': seller, 'category': category})
 
     if product_serializer.is_valid():
