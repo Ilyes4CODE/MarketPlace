@@ -15,18 +15,18 @@ class Category(models.Model):
 
 class Product(models.Model):
     CONDITION_CHOICES = [
-        ('new', 'New'),
-        ('used', 'Used'),
+    ('جديد', 'جديد'),
+    ('مستعمل', 'مستعمل'),
     ]
 
     SALE_TYPE_CHOICES = [
-        ('simple', 'Simple'),
-        ('bid', 'Bid'),
+        ('عادي', 'عادي'),
+        ('مزاد', 'مزاد'),
     ]
 
     CURRENCY_CHOICES = [
-        ('USD', 'US Dollar ($)'),
-        ('LBP', 'Lebanese Lira (ل.ل)'),
+        ('دولار أمريكي', 'دولار أمريكي'),
+        ('الليرة اللبنانية (ل.ل)', 'الليرة اللبنانية (ل.ل)'),
     ]
 
     seller = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='products')
@@ -44,10 +44,10 @@ class Product(models.Model):
     bid_end_time = models.DateTimeField(null=True, blank=True)  # Time when bidding should close
     closed = models.BooleanField(default=False)  # True if the bid has ended
 
-    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='USD')
+    currency = models.CharField(max_length=23, choices=CURRENCY_CHOICES, default='دولار أمريكي')
     upload_date = models.DateTimeField(default=timezone.now)
-    condition = models.CharField(max_length=10, choices=CONDITION_CHOICES, default='new')
-    sale_type = models.CharField(max_length=10, choices=SALE_TYPE_CHOICES, default='simple')
+    condition = models.CharField(max_length=10, choices=CONDITION_CHOICES, default='جديد')
+    sale_type = models.CharField(max_length=10, choices=SALE_TYPE_CHOICES, default='عادي')
     is_approved = models.BooleanField(default=False)
     location = models.CharField(max_length=50, null=True)
     sold = models.BooleanField(default=False)

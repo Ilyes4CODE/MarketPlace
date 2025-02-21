@@ -86,9 +86,9 @@ def create_bid_product(request):
             'title': openapi.Schema(type=openapi.TYPE_STRING, description="Name of the product"),
             'description': openapi.Schema(type=openapi.TYPE_STRING, description="Detailed description of the product"),
             'price': openapi.Schema(type=openapi.TYPE_NUMBER, format=openapi.FORMAT_DECIMAL, description="Price of the product"),
-            'condition': openapi.Schema(type=openapi.TYPE_STRING, enum=['new', 'used'], description="Product condition"),
+            'condition': openapi.Schema(type=openapi.TYPE_STRING, enum=['جدسد', 'مستعمل'], description="Product condition"),
             'location': openapi.Schema(type=openapi.TYPE_STRING, description="Product location"),
-            'currency': openapi.Schema(type=openapi.TYPE_STRING, enum=['USD', 'LBP'], description="Currency (USD or LBP)"),
+            'currency': openapi.Schema(type=openapi.TYPE_STRING, enum=['دولار أمريكي', 'الليرة اللبنانية (ل.ل)'], description="Currency (USD or LBP)"),
             'category': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID of the product category"),
             'photos': openapi.Schema(
                 type=openapi.TYPE_ARRAY,
@@ -112,7 +112,7 @@ def create_simple_product(request):
     seller = request.user.marketuser
     data = request.data.copy()  # Create a mutable copy of request.data
 
-    data['sale_type'] = 'simple'
+    data['sale_type'] = 'عادي'
     
     try:
         category = Category.objects.get(pk=data['category'])
@@ -142,7 +142,7 @@ def create_simple_product(request):
 @not_banned_user_required
 def place_bid(request, product_id):
     # Get the product and ensure it’s a bid product
-    product = Product.objects.filter(id=product_id, sale_type='bid', is_approved=True).first()
+    product = Product.objects.filter(id=product_id, sale_type='مزاد', is_approved=True).first()
     if not product:
         return Response({"error": "Product not available for bidding."}, status=status.HTTP_404_NOT_FOUND)
 
