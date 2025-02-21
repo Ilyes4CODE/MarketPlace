@@ -110,24 +110,30 @@ def create_bid_product(request):
 @not_banned_user_required
 def create_simple_product(request):
     seller = request.user.marketuser
-    data = request.data
+    data = request.data.copy()  # Create a mutable copy of request.data
 
     data['sale_type'] = 'simple'
-    category = Category.objects.get(pk=data['category'])
+    
+    try:
+        category = Category.objects.get(pk=data['category'])
+    except Category.DoesNotExist:
+        return Response({"category": "Invalid category ID."}, status=status.HTTP_400_BAD_REQUEST)
+
     if 'price' not in data or not data['price']:
         return Response({"price": "Price is required for simple products."}, status=status.HTTP_400_BAD_REQUEST)
 
-    product_serializer = ProductSerializer(data=data, context={'seller': seller,'category':category})
+    product_serializer = ProductSerializer(data=data, context={'seller': seller, 'category': category})
+
     if product_serializer.is_valid():
         product = product_serializer.save(seller=seller)
         photos = request.FILES.getlist('photos')
+
         for photo in photos:
             ProductPhoto.objects.create(product=product, photo=photo)
 
         return Response(product_serializer.data, status=status.HTTP_201_CREATED)
 
     return Response(product_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 
 @api_view(['POST'])
