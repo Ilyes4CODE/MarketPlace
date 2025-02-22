@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from .models import Product, ProductPhoto, Bid,Notificationbid,Listing
-from .serializer import ProductSerializer, ProductPhotoSerializer, BidSerializer
+from .serializer import ProductSerializer, ProductPhotoSerializer, BidSerializer,CategorySerializer
 from django.shortcuts import get_object_or_404
 from decorators import verified_user_required ,not_banned_user_required
 from .utils import send_real_time_notification,start_conversation
@@ -15,6 +15,8 @@ from django.utils import timezone
 from .models import Category
 from django.db.models import Max
 from Auth.models import MarketUser
+from decorators import admin_required
+
 @swagger_auto_schema(
     method='post',
     operation_description="Create a new bid product",
@@ -165,6 +167,55 @@ def create_simple_product(request):
 
     return Response(product_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+
+@swagger_auto_schema(
+    method='post',
+    operation_description="تقديم مزايدة على منتج معين في المزاد.",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=["amount"],
+        properties={
+            "amount": openapi.Schema(
+                type=openapi.TYPE_NUMBER,
+                description="قيمة المزايدة الجديدة (يجب أن تكون أعلى من أعلى مزايدة حالية)."
+            ),
+        },
+    ),
+    responses={
+        201: openapi.Response(
+            description="تم تقديم المزايدة بنجاح وهي قيد المراجعة من قبل الإدارة.",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    "message": openapi.Schema(type=openapi.TYPE_STRING, description="رسالة النجاح."),
+                    "bid": openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        description="تفاصيل المزايدة المقدمة.",
+                    ),
+                },
+            ),
+        ),
+        400: openapi.Response(
+            description="طلب غير صالح، تحقق من الرسائل لمعرفة الأخطاء.",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    "error": openapi.Schema(type=openapi.TYPE_STRING, description="تفاصيل الخطأ."),
+                },
+            ),
+        ),
+        404: openapi.Response(
+            description="المنتج غير متاح للمزايدة.",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    "error": openapi.Schema(type=openapi.TYPE_STRING, description="تفاصيل الخطأ."),
+                },
+            ),
+        ),
+    },
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @verified_user_required
@@ -173,29 +224,29 @@ def place_bid(request, product_id):
     # Get the product and ensure it’s a bid product
     product = Product.objects.filter(id=product_id, sale_type='مزاد', is_approved=True).first()
     if not product:
-        return Response({"error": "Product not available for bidding."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "المنتج غير متاح للمزايدة."}, status=status.HTTP_404_NOT_FOUND)
 
     # Prevent the seller from bidding on their own product
     if product.seller == request.user.marketuser:
-        return Response({"error": "You cannot bid on your own product."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "لا يمكنك المزايدة على منتجك الخاص."}, status=status.HTTP_400_BAD_REQUEST)
 
     # Check if bidding has ended
     if product.closed or (product.bid_end_time and timezone.now() >= product.bid_end_time):
         product.closed = True
         product.save()
-        return Response({"error": "Bidding for this product has ended."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "انتهت فترة المزايدة على هذا المنتج."}, status=status.HTTP_400_BAD_REQUEST)
 
     # Get the bid amount
     bid_amount = request.data.get("amount")
     if not bid_amount:
-        return Response({"error": "Bid amount is required."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "يجب تحديد قيمة المزايدة."}, status=status.HTTP_400_BAD_REQUEST)
 
     bid_amount = float(bid_amount)
 
     # Get the highest accepted bid (or starting price if no bids exist)
     highest_bid = Bid.objects.filter(product=product, status="accepted").aggregate(Max('amount'))['amount__max'] or product.starting_price
     if bid_amount <= highest_bid:
-        return Response({"error": f"Your bid must be higher than {highest_bid} {product.currency}."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": f"يجب أن تكون المزايدة أعلى من {highest_bid} {product.currency}."}, status=status.HTTP_400_BAD_REQUEST)
 
     # Create the new bid with `pending` status (Admin will approve)
     bid = Bid.objects.create(
@@ -205,14 +256,81 @@ def place_bid(request, product_id):
         status="pending"  # Pending approval
     )
 
+    # Notify the user that their bid is under review
+    send_real_time_notification(
+        request.user.marketuser,
+        f"تم تقديم مزايدتك بقيمة {bid_amount} {product.currency} على '{product.title}' وهي قيد المراجعة من قبل الإدارة."
+    )
+
     # Notify admins for bid approval
     admin_users = MarketUser.objects.filter(profile__groups__name="Admin")
     for admin in admin_users:
-        send_real_time_notification(admin, f"New bid of {bid_amount} {product.currency} placed on '{product.title}'. Please review and approve.")
+        send_real_time_notification(
+            admin,
+            f"تم تقديم مزايدة جديدة بقيمة {bid_amount} {product.currency} على '{product.title}'. يرجى مراجعتها والموافقة عليها."
+        )
 
-    return Response({"message": "Bid placed successfully and is pending admin approval.", "bid": BidSerializer(bid).data}, status=status.HTTP_201_CREATED)
+    return Response(
+        {
+            "message": "تم تقديم المزايدة بنجاح وهي قيد المراجعة من قبل الإدارة.",
+            "bid": BidSerializer(bid).data
+        },
+        status=status.HTTP_201_CREATED
+    )
 
 
+@swagger_auto_schema(
+    method='post',
+    operation_summary="إنهاء المزاد وتحديد الفائز",
+    operation_description="""
+    يقوم البائع بإنهاء المزاد واختيار المزايدة الفائزة. يتم رفض جميع المزايدات الأخرى، ويتم إشعار الفائز والبائع والمسؤولين الإداريين.
+    """,
+    manual_parameters=[
+        openapi.Parameter(
+            name="Authorization",
+            in_=openapi.IN_HEADER,
+            description="توكن المصادقة باستخدام JWT (Bearer token)",
+            type=openapi.TYPE_STRING,
+            required=True
+        ),
+    ],
+    responses={
+        200: openapi.Response(
+            description="تم إنهاء المزاد بنجاح",
+            examples={
+                "application/json": {
+                    "message": "تم إنهاء المزاد بنجاح.",
+                    "winning_bid": {
+                        "id": 12,
+                        "amount": 1500,
+                        "buyer": {
+                            "id": 5,
+                            "username": "mohammed123"
+                        },
+                        "status": "accepted",
+                        "winner": True
+                    }
+                }
+            }
+        ),
+        400: openapi.Response(
+            description="خطأ في الإدخال",
+            examples={
+                "application/json": {
+                    "error": "لم يتم تحديد المزايدة الفائزة. يرجى اختيار مزايدة لإنهاء المزاد."
+                }
+            }
+        ),
+        404: openapi.Response(
+            description="المنتج أو المزايدة غير موجودة",
+            examples={
+                "application/json": {
+                    "error": "المنتج غير موجود أو ليس لديك الصلاحية لإنهاء المزاد."
+                }
+            }
+        )
+    }
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @verified_user_required
@@ -221,100 +339,223 @@ def end_bid(request, product_id, bid_id):
     seller = request.user.marketuser
 
     try:
-        # Ensure the product exists and belongs to the seller
-        product = Product.objects.get(id=product_id, seller=seller, sale_type='bid')
+        # التأكد من أن المنتج موجود وينتمي للبائع
+        product = Product.objects.get(id=product_id, seller=seller, sale_type='مزاد')
     except Product.DoesNotExist:
-        return Response({"error": "Product not found or you do not have permission to end the bid."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "المنتج غير موجود أو ليس لديك الصلاحية لإنهاء المزاد."}, status=status.HTTP_404_NOT_FOUND)
 
     if not bid_id:
-        return Response({"error": "No bid_id provided. Please select a bid to end the auction."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "لم يتم تحديد المزايدة الفائزة. يرجى اختيار مزايدة لإنهاء المزاد."}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        # Retrieve the selected bid and ensure it's an approved bid
+        # البحث عن المزايدة الفائزة والتأكد من أنها مقبولة
         selected_bid = Bid.objects.get(id=bid_id, product=product, status="accepted")
     except Bid.DoesNotExist:
-        return Response({"error": "Selected bid not found, not approved, or does not belong to this product."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "المزايدة المحددة غير موجودة أو لم يتم قبولها أو لا تتعلق بهذا المنتج."}, status=status.HTTP_404_NOT_FOUND)
 
-    # Mark the selected bid as the winner
+    # تعيين المزايدة الفائزة
     selected_bid.winner = True
     selected_bid.save()
 
-    # Mark the product as sold and closed
+    # تحديث حالة المنتج ليكون مبيعًا ومغلقًا
     product.sold = True
     product.closed = True
     product.save()
 
-    # Reject all other bids for this product
+    # رفض جميع المزايدات الأخرى لهذا المنتج
     Bid.objects.filter(product=product).exclude(id=selected_bid.id).update(status="rejected", winner=False)
 
-    # 🔔 Notify the winner
+    # 🔔 إرسال إشعار للفائز
     send_real_time_notification(
         selected_bid.buyer, 
-        f"🎉 Congratulations! Your bid of {selected_bid.amount} {product.currency} on '{product.title}' has won."
+        f"🎉 تهانينا! لقد فزت بالمزاد على '{product.title}' بمبلغ {selected_bid.amount} {product.currency}."
     )
 
-    # 🔔 Notify the seller
+    # 🔔 إرسال إشعار للبائع
     send_real_time_notification(
         product.seller, 
-        f"✅ You have successfully sold '{product.title}' for {selected_bid.amount} {product.currency}."
+        f"✅ لقد قمت ببيع '{product.title}' بنجاح بمبلغ {selected_bid.amount} {product.currency}."
     )
 
-    # 💬 Start a conversation between the seller and the winner
+    # 💬 بدء محادثة بين البائع والفائز
     start_conversation(product.seller, selected_bid.buyer, product)
 
-    # 🔍 Find all admin users
+    # 🔍 العثور على جميع المسؤولين الإداريين
     admin_users = MarketUser.objects.filter(user__groups__name="Admin")
 
-    # 🔔 Notify admins that the bid has ended
+    # 🔔 إشعار المسؤولين بانتهاء المزاد
     for admin in admin_users:
         send_real_time_notification(
             admin, 
-            f"📢 Auction for '{product.title}' has ended. Winning bid: {selected_bid.amount} {product.currency}."
+            f"📢 انتهى المزاد على '{product.title}'. المزايدة الفائزة: {selected_bid.amount} {product.currency}."
         )
 
     return Response({
-        "message": "Bidding ended successfully.",
+        "message": "تم إنهاء المزاد بنجاح.",
         "winning_bid": BidSerializer(selected_bid).data
     }, status=status.HTTP_200_OK)
 
 
 
+@swagger_auto_schema(
+    method='get',
+    operation_summary="عرض جميع المنتجات الخاصة بالبائع",
+    operation_description="""
+    يقوم هذا الطلب بجلب جميع المنتجات التي تم إدراجها من قبل البائع المسجل حاليًا. يتم ترتيب المنتجات من الأحدث إلى الأقدم.
+    """,
+    manual_parameters=[
+        openapi.Parameter(
+            name="Authorization",
+            in_=openapi.IN_HEADER,
+            description="توكن المصادقة باستخدام JWT (Bearer token)",
+            type=openapi.TYPE_STRING,
+            required=True
+        ),
+    ],
+    responses={
+        200: openapi.Response(
+            description="تم استرجاع المنتجات بنجاح",
+            examples={
+                "application/json": [
+                    {
+                        "id": 1,
+                        "title": "هاتف آيفون 13",
+                        "price": 1200,
+                        "currency": "USD",
+                        "sale_type": "عادي",
+                        "created_at": "2025-02-22T12:00:00Z"
+                    },
+                    {
+                        "id": 2,
+                        "title": "كمبيوتر محمول HP",
+                        "price": 900,
+                        "currency": "USD",
+                        "sale_type": "مزاد",
+                        "created_at": "2025-02-20T15:30:00Z"
+                    }
+                ]
+            }
+        ),
+        404: openapi.Response(
+            description="لم يتم العثور على منتجات",
+            examples={
+                "application/json": {
+                    "message": "لم يتم العثور على أي منتجات."
+                }
+            }
+        ),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @verified_user_required
 @not_banned_user_required
 def seller_products_history(request):
     """
-    Retrieve all products listed by the authenticated seller.
+    استرجاع جميع المنتجات التي تم إدراجها من قبل البائع المسجل حاليًا.
     """
     seller = request.user.marketuser
     products = Product.objects.filter(seller=seller).order_by('-created_at')
 
     if not products.exists():
-        return Response({"message": "No products found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"message": "لم يتم العثور على أي منتجات."}, status=status.HTTP_404_NOT_FOUND)
 
     return Response(ProductSerializer(products, many=True).data, status=status.HTTP_200_OK)
 
 
+@swagger_auto_schema(
+    method='get',
+    operation_summary="عرض جميع المزايدات على منتج معين",
+    operation_description="""
+    يقوم هذا الطلب بجلب جميع المزايدات التي تم تقديمها على منتج معين من قبل البائع المسجل حاليًا.
+    يتم ترتيب المزايدات من الأعلى إلى الأدنى من حيث القيمة.
+    """,
+    manual_parameters=[
+        openapi.Parameter(
+            name="Authorization",
+            in_=openapi.IN_HEADER,
+            description="توكن المصادقة باستخدام JWT (Bearer token)",
+            type=openapi.TYPE_STRING,
+            required=True
+        ),
+        openapi.Parameter(
+            name="product_id",
+            in_=openapi.IN_PATH,
+            description="معرّف المنتج المطلوب عرض المزايدات الخاصة به",
+            type=openapi.TYPE_INTEGER,
+            required=True
+        ),
+    ],
+    responses={
+        200: openapi.Response(
+            description="تم استرجاع المزايدات بنجاح",
+            examples={
+                "application/json": [
+                    {
+                        "id": 101,
+                        "buyer": {
+                            "id": 5,
+                            "username": "ahmed_user"
+                        },
+                        "amount": 1500,
+                        "status": "accepted",
+                        "winner": False,
+                        "created_at": "2025-02-22T12:00:00Z"
+                    },
+                    {
+                        "id": 102,
+                        "buyer": {
+                            "id": 7,
+                            "username": "sara_bidder"
+                        },
+                        "amount": 1400,
+                        "status": "pending",
+                        "winner": False,
+                        "created_at": "2025-02-21T18:30:00Z"
+                    }
+                ]
+            }
+        ),
+        404: openapi.Response(
+            description="لم يتم العثور على المزايدات",
+            examples={
+                "application/json": {
+                    "message": "لم يتم تقديم أي مزايدات على هذا المنتج بعد."
+                }
+            }
+        ),
+        403: openapi.Response(
+            description="البائع لا يملك الصلاحية لعرض المزايدات على هذا المنتج",
+            examples={
+                "application/json": {
+                    "error": "المنتج غير موجود أو ليس لديك الإذن لعرض المزايدات."
+                }
+            }
+        ),
+    }
+)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @verified_user_required
 @not_banned_user_required
 def product_bids_history(request, product_id):
-    
+    """
+    استرجاع جميع المزايدات التي تم تقديمها على منتج معين من قبل البائع المسجل حاليًا.
+    """
     seller = request.user.marketuser
 
     try:
-        product = Product.objects.get(id=product_id, seller=seller, sale_type='bid')
+        product = Product.objects.get(id=product_id, seller=seller, sale_type='مزاد')
     except Product.DoesNotExist:
-        return Response({"error": "Product not found or you do not have permission to view bids."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "المنتج غير موجود أو ليس لديك الإذن لعرض المزايدات."}, status=status.HTTP_404_NOT_FOUND)
 
     bids = Bid.objects.filter(product=product).order_by('-amount')
 
     if not bids.exists():
-        return Response({"message": "No bids placed on this product yet."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"message": "لم يتم تقديم أي مزايدات على هذا المنتج بعد."}, status=status.HTTP_404_NOT_FOUND)
 
     return Response(BidSerializer(bids, many=True).data, status=status.HTTP_200_OK)
+
 
 
 
@@ -470,7 +711,7 @@ def purchase_product(request, product_id):
     buyer = request.user.marketuser  # Authenticated user
 
     # Get the product
-    product = get_object_or_404(Product, id=product_id, sale_type='simple')
+    product = get_object_or_404(Product, id=product_id, sale_type='عادي')
 
     # Prevent the seller from purchasing their own product
     if product.seller == buyer:
@@ -490,11 +731,11 @@ def purchase_product(request, product_id):
 
     # Notify the seller
     seller_message = f"Your product '{product.title}' has been requested for purchase by {buyer.profile.username}."
-    Notificationbid.objects.create(
-        recipient=product.seller,
-        message=seller_message,
-        bid=None  # Since this isn't a bid-related notification
-    )
+    # Notificationbid.objects.create(
+    #     recipient=product.seller,
+    #     message=seller_message,
+    #     bid=None  # Since this isn't a bid-related notification
+    # )
 
     send_real_time_notification(product.seller, seller_message)
     return Response({
@@ -570,3 +811,90 @@ def get_buyer_purchases(request):
     ]
 
     return Response({"buyer_purchases": listings_data}, status=status.HTTP_200_OK)
+
+# 📌 Create a new category
+@swagger_auto_schema(
+    method='post',
+    operation_summary="إضافة تصنيف جديد",
+    operation_description="يقوم هذا الطلب بإنشاء تصنيف جديد ببيانات الاسم والوصف والصورة.",
+    request_body=CategorySerializer,
+    responses={
+        201: openapi.Response(
+            description="تم إنشاء التصنيف بنجاح",
+            examples={
+                "application/json": {
+                    "id": 1,
+                    "name": "إلكترونيات",
+                    "description": "منتجات إلكترونية",
+                    "image": "/media/Category_pictures/electronics.jpg"
+                }
+            }
+        ),
+        400: openapi.Response(
+            description="خطأ في الإدخال",
+            examples={
+                "application/json": {
+                    "name": ["هذا الاسم مستخدم بالفعل."]
+                }
+            }
+        ),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@admin_required
+def create_category(request):
+    """
+    إضافة تصنيف جديد
+    """
+    serializer = CategorySerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# 📌 Get all categories
+@swagger_auto_schema(
+    method='get',
+    operation_summary="عرض جميع التصنيفات",
+    operation_description="يقوم هذا الطلب بجلب جميع التصنيفات المسجلة في النظام.",
+    responses={
+        200: openapi.Response(
+            description="تم استرجاع التصنيفات بنجاح",
+            examples={
+                "application/json": [
+                    {
+                        "id": 1,
+                        "name": "إلكترونيات",
+                        "description": "منتجات إلكترونية",
+                        "image": "/media/Category_pictures/electronics.jpg"
+                    },
+                    {
+                        "id": 2,
+                        "name": "أزياء",
+                        "description": "ملابس وأزياء",
+                        "image": "/media/Category_pictures/fashion.jpg"
+                    }
+                ]
+            }
+        ),
+        404: openapi.Response(
+            description="لم يتم العثور على تصنيفات",
+            examples={
+                "application/json": {
+                    "message": "لا توجد تصنيفات متاحة."
+                }
+            }
+        ),
+    }
+)
+@api_view(['GET'])
+def get_all_categories(request):
+    categories = Category.objects.all()
+    if not categories.exists():
+        return Response({"message": "لا توجد تصنيفات متاحة."}, status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = CategorySerializer(categories, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+

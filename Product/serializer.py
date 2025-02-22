@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Product, ProductPhoto, Bid
+from .models import Product, ProductPhoto, Bid,Category
 
 class ProductPhotoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -31,3 +31,8 @@ class BidSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'buyer', 'buyer_name', 'product_name', 'seller_name', 'created_at']
 
 
+
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Category
+        fields = ['id', 'name', 'description', 'image']

@@ -1,11 +1,11 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from .serializer import MarketUserSerializer, UserSerializer,UpdateUserSerializer,CustomTokenObtainPairSerializer
+from .serializer import MarketUserSerializer, UserSerializer,UpdateUserSerializer,CustomTokenObtainPairSerializer,UpdateProfilePictureSerializer,UpdatePhoneNumberSerializer,ConfirmPhoneUpdateSerializer
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from .models import MarketUser
+from .models import MarketUser,DeletedAccounts
 from drf_yasg import openapi
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.cache import cache
@@ -16,7 +16,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 import re
 from rest_framework_simplejwt.views import TokenObtainPairView
-
+from Product.utils import send_real_time_notification
 
 phone_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Phone number of the user")
 email_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Email of the user")
@@ -247,3 +247,171 @@ def user_info(request):
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
+
+@swagger_auto_schema(
+    method='post',
+    operation_summary="تحديث صورة الملف الشخصي",
+    operation_description="يتيح هذا الطلب للمستخدم تحديث صورة الملف الشخصي.",
+    request_body=UpdateProfilePictureSerializer,
+    responses={
+        200: openapi.Response(
+            description="تم تحديث صورة الملف الشخصي بنجاح",
+            examples={"application/json": {"message": "تم تحديث صورة الملف الشخصي بنجاح."}}
+        ),
+        400: openapi.Response(
+            description="خطأ في البيانات",
+            examples={"application/json": {"error": "البيانات غير صحيحة."}}
+        ),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_profile_picture(request):
+    """
+    تحديث صورة الملف الشخصي
+    """
+    user = request.user.marketuser
+    serializer = UpdateProfilePictureSerializer(user, data=request.data, partial=True)
+
+    if serializer.is_valid():
+        serializer.save()
+        return Response({"message": "تم تحديث صورة الملف الشخصي بنجاح."}, status=status.HTTP_200_OK)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@swagger_auto_schema(
+    method='post',
+    operation_summary="طلب تحديث رقم الهاتف",
+    operation_description="يرسل هذا الطلب رقم الهاتف الجديد إلى الواجهة الأمامية للتحقق.",
+    request_body=UpdatePhoneNumberSerializer,
+    responses={
+        200: openapi.Response(
+            description="تم إرسال رقم الهاتف للتحقق",
+            examples={"application/json": {"message": "تم إرسال رقم الهاتف الجديد للتحقق.", "phone": "+213123456789"}}
+        ),
+        400: openapi.Response(
+            description="خطأ في البيانات",
+            examples={"application/json": {"error": "رقم الهاتف مطلوب."}}
+        ),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def request_phone_update(request):
+    """
+    طلب تحديث رقم الهاتف (إرسال للتحقق)
+    """
+    serializer = UpdatePhoneNumberSerializer(data=request.data)
+    
+    if serializer.is_valid():
+        new_phone = serializer.validated_data['phone']
+        
+        # 👇 Send this phone number to the frontend for confirmation
+        return Response({
+            "message": "تم إرسال رقم الهاتف الجديد للتحقق.",
+            "phone": new_phone
+        }, status=status.HTTP_200_OK)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@swagger_auto_schema(
+    method='post',
+    operation_summary="تأكيد تحديث رقم الهاتف",
+    operation_description="يقوم هذا الطلب بتحديث رقم الهاتف في حالة الموافقة.",
+    request_body=ConfirmPhoneUpdateSerializer,
+    responses={
+        200: openapi.Response(
+            description="تم تحديث رقم الهاتف بنجاح",
+            examples={"application/json": {"message": "تم تحديث رقم الهاتف بنجاح."}}
+        ),
+        400: openapi.Response(
+            description="فشل التحقق",
+            examples={"application/json": {"error": "لم يتم تأكيد رقم الهاتف الجديد."}}
+        ),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def confirm_phone_update(request):
+    user = request.user.marketuser
+    serializer = ConfirmPhoneUpdateSerializer(data=request.data)
+
+    if serializer.is_valid():
+        if serializer.validated_data['status']:
+            user.phone = serializer.validated_data['phone']
+            user.save()
+            return Response({"message": "تم تحديث رقم الهاتف بنجاح."}, status=status.HTTP_200_OK)
+        else:
+            return Response({"error": "لم يتم تأكيد رقم الهاتف الجديد."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@swagger_auto_schema(
+    method='post',
+    operation_summary="طلب حذف الحساب",
+    operation_description="يرسل هذا الطلب إشعارًا يطلب تأكيد حذف الحساب.",
+    responses={
+        200: openapi.Response(
+            description="تم إرسال طلب حذف الحساب بنجاح",
+            examples={"application/json": {"message": "هل أنت متأكد أنك تريد حذف حسابك؟"}}
+        ),
+        400: openapi.Response(
+            description="المستخدم غير مسجل الدخول",
+            examples={"application/json": {"error": "يجب أن تكون مسجلاً للدخول لحذف حسابك."}}
+        ),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def request_account_deletion(request):
+    """
+    طلب حذف الحساب (يجب التأكيد أولاً)
+    """
+    return Response({"message": "هل أنت متأكد أنك تريد حذف حسابك؟"}, status=status.HTTP_200_OK)
+
+
+@swagger_auto_schema(
+    method='post',
+    operation_summary="تأكيد حذف الحساب",
+    operation_description="يقوم هذا الطلب بحذف الحساب بشكل نهائي إذا تم التأكيد.",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'confirm': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="يجب أن يكون True لحذف الحساب")
+        },
+        required=['confirm']
+    ),
+    responses={
+        200: openapi.Response(
+            description="تم حذف الحساب بنجاح",
+            examples={"application/json": {"message": "تم حذف حسابك بنجاح."}}
+        ),
+        400: openapi.Response(
+            description="فشل تأكيد الحذف",
+            examples={"application/json": {"error": "يجب تأكيد الحذف لإتمام العملية."}}
+        ),
+    }
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def confirm_account_deletion(request):
+    """
+    تأكيد حذف الحساب (يتم الحذف نهائيًا)
+    """
+    user = request.user
+    market_user = user.marketuser
+
+    if request.data.get("confirm") is True:
+        # 🔔 Notify admins that this user has deleted their account
+        admin_users = MarketUser.objects.filter(profile__groups__name="Admin")
+        for admin in admin_users:
+            send_real_time_notification(
+                admin, 
+                f"⚠️ تم حذف حساب المستخدم '{market_user.name}' ({user.username})"
+            )
+        DeletedAccounts.objects.create(email = market_user.email)
+        user.delete()
+        return Response({"message": "تم حذف حسابك بنجاح."}, status=status.HTTP_200_OK)
+    
+    return Response({"error": "يجب تأكيد الحذف لإتمام العملية."}, status=status.HTTP_400_BAD_REQUEST)

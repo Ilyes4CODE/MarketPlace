@@ -107,3 +107,19 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         # إذا كان كل شيء صحيحًا، تابع التحقق العادي
         return super().validate(attrs)
+    
+
+
+
+class UpdateProfilePictureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MarketUser
+        fields = ['profile_picture']
+
+
+class UpdatePhoneNumberSerializer(serializers.Serializer):
+    phone = serializers.CharField(max_length=20)
+
+class ConfirmPhoneUpdateSerializer(serializers.Serializer):
+    phone = serializers.CharField(max_length=20)
+    status = serializers.BooleanField()

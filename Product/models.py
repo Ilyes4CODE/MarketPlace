@@ -8,6 +8,8 @@ from datetime import timedelta
 
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
+    description = models.CharField(max_length=100,null=True)
+    image = models.ImageField(upload_to='Category_pictures/',null = True)
 
     def __str__(self):
         return self.name
@@ -25,8 +27,8 @@ class Product(models.Model):
     ]
 
     CURRENCY_CHOICES = [
-        ('دولار أمريكي', 'دولار أمريكي'),
-        ('الليرة اللبنانية (ل.ل)', 'الليرة اللبنانية (ل.ل)'),
+        ('دولار', 'دولار'),
+        ('ليرة', 'ليرة'),
     ]
 
     seller = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='products')
@@ -44,7 +46,7 @@ class Product(models.Model):
     bid_end_time = models.DateTimeField(null=True, blank=True)  # Time when bidding should close
     closed = models.BooleanField(default=False)  # True if the bid has ended
 
-    currency = models.CharField(max_length=23, choices=CURRENCY_CHOICES, default='دولار أمريكي')
+    currency = models.CharField(max_length=23, choices=CURRENCY_CHOICES, default='دولار')
     upload_date = models.DateTimeField(default=timezone.now)
     condition = models.CharField(max_length=10, choices=CONDITION_CHOICES, default='جديد')
     sale_type = models.CharField(max_length=10, choices=SALE_TYPE_CHOICES, default='عادي')
@@ -53,14 +55,14 @@ class Product(models.Model):
     sold = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
-        if self.sale_type == 'bid' and self.duration and not self.bid_end_time:
+        if self.sale_type == 'مزاد' and self.duration and not self.bid_end_time:
             self.bid_end_time = self.upload_date + timedelta(hours=self.duration)  # Set end time
 
         super().save(*args, **kwargs)
 
     def check_bid_status(self):
         """Automatically closes the bid if time is up."""
-        if self.sale_type == 'bid' and self.bid_end_time and timezone.now() >= self.bid_end_time:
+        if self.sale_type == 'مزاد' and self.bid_end_time and timezone.now() >= self.bid_end_time:
             self.closed = True
             self.save()
 

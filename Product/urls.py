@@ -15,4 +15,7 @@ urlpatterns = [
     path('listings/accept/<int:listing_id>/', views.accept_related_listings, name='accept_listing'),
     path('listings/seller/', views.get_seller_listings, name='seller_listings'),
     path('listings/buyer/', views.get_buyer_purchases, name='buyer_purchases'),
+    path('History/',views.seller_products_history),
+    path('Create_Category/',views.create_category),
+    path('Get_All_Categories/',views.get_all_categories)
 ]

@@ -15,3 +15,10 @@ class MarketUser(models.Model):
 
     def __str__(self):
         return self.profile.username
+    
+
+class DeletedAccounts(models.Model):
+    email = models.EmailField(max_length=254)
+
+    def __str__(self):
+        return self.email
