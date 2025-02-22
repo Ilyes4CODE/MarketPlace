@@ -9,4 +9,9 @@ urlpatterns = [
     path('profile/update/', views.update_user_profile, name='update_profile'),
     path('verify-otp/', views.verify_otp, name='verify_otp'),
     path("info/", views.user_info, name="user-info"),
+    path('request_update_phone/',views.request_phone_update),
+    path('update_phone/',views.confirm_phone_update),
+    path('update_profile_pic/',views.update_profile_picture),
+    path('request_delete_account/',views.request_account_deletion),
+    path('confirm_delete_account/',views.confirm_account_deletion),
 ]
