@@ -650,13 +650,9 @@ def list_products(request):
     if title:
         products = products.filter(title__icontains=title)
 
-    # Paginate results
-    paginator = ProductPagination()
-    result_page = paginator.paginate_queryset(products, request)
-    
     # Serialize products with seller details
     serialized_products = []
-    for product in result_page:
+    for product in products:
         serialized_product = ProductSerializer(product).data
         seller = product.seller  # Assuming 'seller' is a MarketUser instance
         
@@ -668,7 +664,8 @@ def list_products(request):
         
         serialized_products.append(serialized_product)
 
-    return paginator.get_paginated_response(serialized_products)
+    return Response(serialized_products, status=status.HTTP_200_OK)
+
 
 
 @swagger_auto_schema(
