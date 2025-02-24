@@ -16,6 +16,8 @@ from .models import Category
 from django.db.models import Max
 from Auth.models import MarketUser
 from decorators import admin_required
+from django.db.models import Q, F, Value
+from django.db.models.functions import Coalesce
 
 @swagger_auto_schema(
     method='post',
@@ -622,16 +624,28 @@ def list_products(request):
         products = products.filter(sale_type=sale_type)
     if category_id:
         products = products.filter(category_id=category_id)
-    if min_price:
-        products = products.filter(price__gte=min_price)
-    if max_price:
-        products = products.filter(price__lte=max_price)
 
-    # Sorting by price
+    # Apply min price filtering (either price or starting_price)
+    if min_price:
+        products = products.filter(
+            Q(price__gte=min_price) | Q(starting_price__gte=min_price)
+        )
+
+    # Apply max price filtering (either price or starting_price)
+    if max_price:
+        products = products.filter(
+            Q(price__lte=max_price) | Q(starting_price__lte=max_price)
+        )
+
+    # Sorting by price (lowest available price)
     if price_order == "asc":
-        products = products.order_by("price")
+        products = products.annotate(
+            effective_price=Coalesce('price', 'starting_price')  # Use the first non-null value
+        ).order_by("effective_price")
     elif price_order == "desc":
-        products = products.order_by("-price")
+        products = products.annotate(
+            effective_price=Coalesce('price', 'starting_price')
+        ).order_by("-effective_price")
 
     if title:
         products = products.filter(title__icontains=title)
@@ -655,7 +669,6 @@ def list_products(request):
         serialized_products.append(serialized_product)
 
     return paginator.get_paginated_response(serialized_products)
-
 
 
 @swagger_auto_schema(

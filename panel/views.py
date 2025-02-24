@@ -117,3 +117,24 @@ def ban_and_unban_users(request,pk):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+@admin_required
+def delete_user(request, pk):
+    """
+    حذف مستخدم بناءً على المعرف (ID)، يُسمح فقط للمشرفين بحذف المستخدمين
+    """
+    try:
+        market_user = MarketUser.objects.get(id=pk)
+        user = market_user.profile  # Get the associated Django User
+
+        # Prevent deleting admin users
+        if user.groups.filter(name="Admin").exists():
+            return Response({"error": "You cannot delete an admin user."}, status=status.HTTP_403_FORBIDDEN)
+
+        user.delete()  # Deleting User will cascade-delete MarketUser
+        return Response({"message": "User deleted successfully."}, status=status.HTTP_200_OK)
+
+    except MarketUser.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
