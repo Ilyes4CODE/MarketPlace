@@ -11,6 +11,7 @@ class MarketUser(models.Model):
     profile_picture = models.ImageField(upload_to='profile_pic/', blank=True, null=True,default='Default_pfp.jpg')
     is_banned = models.BooleanField(default=False)
     is_verified = models.BooleanField(default=False)
+    created = models.DateField(auto_now=True,null=True)
    
 
     def __str__(self):

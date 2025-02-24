@@ -73,16 +73,22 @@ def manage_bid(request, bid_id):
 @permission_classes([IsAuthenticated])
 @admin_required
 def get_all_users(request):
+    """
+    استرجاع جميع المستخدمين مع إمكانية البحث بالاسم
+    """
+    search_query = request.GET.get("search", "").strip()
     
     users = MarketUser.objects.exclude(profile__groups__name="Admin")
-    
+
+    if search_query:
+        users = users.filter(name__icontains=search_query)
+
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data)
-
     
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-@admin_required
+# @admin_required
 def approve_products(request,product_id):
     product = Product.objects.get(pk=product_id)
     if product.is_approved :

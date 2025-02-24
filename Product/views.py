@@ -605,29 +605,56 @@ class ProductPagination(PageNumberPagination):
 
 @api_view(['GET'])
 def list_products(request):
+    """
+    استرجاع قائمة المنتجات مع إمكانية التصفية والفرز حسب السعر
+    """
     sale_type = request.query_params.get('sale_type', None)
-    category = request.query_params.get('category', None)
+    category_id = request.query_params.get('category', None)
     min_price = request.query_params.get('min_price', None)
     max_price = request.query_params.get('max_price', None)
+    price_order = request.query_params.get('price_order', None)  # 'asc' or 'desc'
     title = request.query_params.get('title', None)
 
-    products = Product.objects.filter(is_approved=True,sold=False)
+    products = Product.objects.filter(is_approved=True, sold=False)
+
+    # Apply filters
     if sale_type:
         products = products.filter(sale_type=sale_type)
-    if category:
-        products = products.filter(category__name__icontains=category)
+    if category_id:
+        products = products.filter(category_id=category_id)
     if min_price:
         products = products.filter(price__gte=min_price)
     if max_price:
         products = products.filter(price__lte=max_price)
+
+    # Sorting by price
+    if price_order == "asc":
+        products = products.order_by("price")
+    elif price_order == "desc":
+        products = products.order_by("-price")
+
     if title:
         products = products.filter(title__icontains=title)
 
     # Paginate results
     paginator = ProductPagination()
     result_page = paginator.paginate_queryset(products, request)
-    serializer = ProductSerializer(result_page, many=True)
-    return paginator.get_paginated_response(serializer.data)
+    
+    # Serialize products with seller details
+    serialized_products = []
+    for product in result_page:
+        serialized_product = ProductSerializer(product).data
+        seller = product.seller  # Assuming 'seller' is a MarketUser instance
+        
+        serialized_product["seller"] = {
+            "id": seller.id,
+            "name": seller.name,
+            "profile_picture": seller.profile_picture.url if seller.profile_picture else None
+        }
+        
+        serialized_products.append(serialized_product)
+
+    return paginator.get_paginated_response(serialized_products)
 
 
 
