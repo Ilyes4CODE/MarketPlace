@@ -609,6 +609,7 @@ class ProductPagination(PageNumberPagination):
 def list_products(request):
     """
     استرجاع قائمة المنتجات مع إمكانية التصفية والفرز حسب السعر
+    وإضافة قائمة العروض (bids) إذا كان المنتج من نوع bid
     """
     sale_type = request.query_params.get('sale_type', None)
     category_id = request.query_params.get('category', None)
@@ -650,11 +651,12 @@ def list_products(request):
     if title:
         products = products.filter(title__icontains=title)
 
-    # Serialize products with seller details
+    # Serialize products with seller, category, and bids (if applicable)
     serialized_products = []
     for product in products:
         serialized_product = ProductSerializer(product).data
         seller = product.seller  # Assuming 'seller' is a MarketUser instance
+        category = product.category  # Assuming 'category' is a Category instance
         
         serialized_product["seller"] = {
             "id": seller.id,
@@ -662,10 +664,97 @@ def list_products(request):
             "profile_picture": seller.profile_picture.url if seller.profile_picture else None
         }
         
+        # Include category name in the response (handle None case)
+        serialized_product["category"] = {
+            "name": category.name if category else "No Category"
+        }
+
+        # If the product is a bid, include all bids for it
+        if product.sale_type == "مزاد":
+            bids = Bid.objects.filter(product=product).order_by("-amount")  
+            serialized_product["bids"] = BidSerializer(bids, many=True).data
+
         serialized_products.append(serialized_product)
 
     return Response(serialized_products, status=status.HTTP_200_OK)
 
+
+
+
+@api_view(['GET'])
+def admin_list_products(request):
+    """
+    استرجاع قائمة المنتجات للمسؤول مع إمكانية التصفية والفرز حسب السعر وحالة الموافقة
+    """
+    sale_type = request.query_params.get('sale_type', None)
+    category_id = request.query_params.get('category', None)
+    min_price = request.query_params.get('min_price', None)
+    max_price = request.query_params.get('max_price', None)
+    condition = request.query_params.get('condition',None)
+    price_order = request.query_params.get('price_order', None)  # 'asc' or 'desc'
+    title = request.query_params.get('title', None)
+    is_approved = request.query_params.get('is_approved', None)  # Filter by approval status
+
+    statuse = None
+    if is_approved == "true":
+        statuse = True
+    elif is_approved == "false":
+        statuse = False
+
+    products = Product.objects.all()
+
+    # Apply filters
+    if condition:
+        products = products.filter(condition=condition)
+    if sale_type:
+        products = products.filter(sale_type=sale_type)
+    if category_id:
+        products = products.filter(category_id=category_id)
+    if is_approved:
+        products = products.filter(is_approved=statuse)
+
+    if min_price:
+        products = products.filter(
+            Q(price__gte=min_price) | Q(starting_price__gte=min_price)
+        )
+
+    if max_price:
+        products = products.filter(
+            Q(price__lte=max_price) | Q(starting_price__lte=max_price)
+        )
+
+    if price_order == "asc":
+        products = products.annotate(
+            effective_price=Coalesce('price', 'starting_price')  
+        ).order_by("effective_price")
+    elif price_order == "desc":
+        products = products.annotate(
+            effective_price=Coalesce('price', 'starting_price')
+        ).order_by("-effective_price")
+
+    if title:
+        products = products.filter(title__icontains=title)
+
+    serialized_products = []
+    for product in products:
+        serialized_product = ProductSerializer(product).data
+        seller = product.seller  # Assuming 'seller' is a MarketUser instance
+        category = product.category  # Assuming 'category' is a Category instance
+        
+        serialized_product["seller"] = {
+            "id": seller.id,
+            "name": seller.name,
+            "profile_picture": seller.profile_picture.url if seller.profile_picture else None
+        }
+        
+        # Include category name in the response (handle None case)
+        serialized_product["category"] = {
+            "name": category.name if category else "No Category"
+        }
+        
+        serialized_products.append(serialized_product)
+
+    return Response(serialized_products, status=status.HTTP_200_OK)
 
 
 @swagger_auto_schema(
@@ -935,3 +1024,19 @@ def get_all_categories(request):
     serializer = CategorySerializer(categories, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
+def user_products_and_bids(request):
+    user = request.user.marketuser
+    user_products = Product.objects.filter(seller=user)
+    products_serializer = ProductSerializer(user_products, many=True)
+    user_bids = Bid.objects.filter(buyer=user)
+    bids_serializer = BidSerializer(user_bids, many=True)
+    return Response({
+        'user_products': products_serializer.data,
+        'user_bids': bids_serializer.data,
+    })
