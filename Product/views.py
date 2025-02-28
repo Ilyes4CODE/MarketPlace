@@ -666,6 +666,7 @@ def list_products(request):
         
         # Include category name in the response (handle None case)
         serialized_product["category"] = {
+            "id": category.pk if category else None,
             "name": category.name if category else "No Category"
         }
 
