@@ -415,3 +415,33 @@ def confirm_account_deletion(request):
         return Response({"message": "تم حذف حسابك بنجاح."}, status=status.HTTP_200_OK)
     
     return Response({"error": "يجب تأكيد الحذف لإتمام العملية."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_password(request):
+    """
+    تحديث كلمة المرور بعد التحقق من كلمة المرور القديمة
+    """
+    user = request.user.marketuser  # يفترض أن MarketUser مرتبط بالمستخدم الحالي
+    
+    old_password = request.data.get("old_password")
+    new_password = request.data.get("new_password")
+    confirm_password = request.data.get("confirm_password")
+
+    if not old_password or not new_password or not confirm_password:
+        return Response({"error": "جميع الحقول مطلوبة"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if new_password != confirm_password:
+        return Response({"error": "كلمتا المرور الجديدتان غير متطابقتين"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # التحقق من صحة كلمة المرور القديمة
+    if not user.profile.check_password(old_password):
+        return Response({"error": "كلمة المرور القديمة غير صحيحة"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # تحديث كلمة المرور الجديدة
+    user.profile.set_password(new_password)
+    user.profile.save()
+
+    return Response({"message": "تم تحديث كلمة المرور بنجاح"}, status=status.HTTP_200_OK)
