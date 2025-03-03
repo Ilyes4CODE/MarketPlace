@@ -1033,11 +1033,41 @@ def get_all_categories(request):
 @not_banned_user_required
 def user_products_and_bids(request):
     user = request.user.marketuser
+
+    # Get 'sell_type' filter from query parameters (optional)
+    sell_type = request.GET.get('sell_type', None)
+
+    # Filter products by seller
     user_products = Product.objects.filter(seller=user)
+
+    # Apply 'sell_type' filter if provided
+    if sell_type:
+        user_products = user_products.filter(sell_type=sell_type)
+
+    # Serialize data
     products_serializer = ProductSerializer(user_products, many=True)
     user_bids = Bid.objects.filter(buyer=user)
     bids_serializer = BidSerializer(user_bids, many=True)
+
     return Response({
         'user_products': products_serializer.data,
         'user_bids': bids_serializer.data,
     })
+
+
+
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])  # Ensure only authenticated users can delete categories
+def delete_category(request, pk):
+    try:
+        category = Category.objects.get(pk=pk)
+        category.delete()
+        return Response({'info': 'Category deleted successfully'}, status=status.HTTP_200_OK)
+    except Category.DoesNotExist:
+        return Response({'error': 'Category not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+

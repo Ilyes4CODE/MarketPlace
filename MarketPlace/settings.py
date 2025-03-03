@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'Chats',
     'panel',
     'channels',
+    'Tickets'
 ]
 firebase_json_str = os.getenv("FIREBASE_CREDENTIALS_JSON")
 

@@ -43,6 +43,7 @@ urlpatterns = [
     path('chat/',include('Chats.urls')),
     path('Products/',include('Product.urls')),
     path('panel/',include('panel.urls')),
+    path('Tickets/',include('Tickets.urls')),
     re_path(r'^ws/', include(routing.websocket_routes)),
     path('', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
