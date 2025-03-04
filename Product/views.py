@@ -1034,15 +1034,15 @@ def get_all_categories(request):
 def user_products_and_bids(request):
     user = request.user.marketuser
 
-    # Get 'sell_type' filter from query parameters (optional)
-    sell_type = request.GET.get('sell_type', None)
+    # Get 'sale_type' filter from query parameters (optional)
+    sale_type = request.GET.get('sell_type', None)  # Keep 'sell_type' in query for consistency
 
     # Filter products by seller
     user_products = Product.objects.filter(seller=user)
 
-    # Apply 'sell_type' filter if provided
-    if sell_type:
-        user_products = user_products.filter(sell_type=sell_type)
+    # Apply 'sale_type' filter if provided
+    if sale_type:
+        user_products = user_products.filter(sale_type=sale_type)  # 🔹 Use sale_type instead of sell_type
 
     # Serialize data
     products_serializer = ProductSerializer(user_products, many=True)
@@ -1053,7 +1053,6 @@ def user_products_and_bids(request):
         'user_products': products_serializer.data,
         'user_bids': bids_serializer.data,
     })
-
 
 
 
