@@ -19,6 +19,13 @@ from decorators import admin_required
 from django.db.models import Q, F, Value
 from django.db.models.functions import Coalesce
 
+
+
+class CustomPagination(PageNumberPagination):
+    page_size = 10  # Default items per page
+    page_size_query_param = 'page_size'
+    max_page_size = 100  # Limit max items per page
+
 @swagger_auto_schema(
     method='post',
     operation_description="Create a new bid product",
@@ -651,9 +658,13 @@ def list_products(request):
     if title:
         products = products.filter(title__icontains=title)
 
+    # Apply pagination
+    paginator = CustomPagination()
+    paginated_products = paginator.paginate_queryset(products, request)
+
     # Serialize products with seller, category, and bids (if applicable)
     serialized_products = []
-    for product in products:
+    for product in paginated_products:
         serialized_product = ProductSerializer(product).data
         seller = product.seller  # Assuming 'seller' is a MarketUser instance
         category = product.category  # Assuming 'category' is a Category instance
@@ -677,7 +688,7 @@ def list_products(request):
 
         serialized_products.append(serialized_product)
 
-    return Response(serialized_products, status=status.HTTP_200_OK)
+    return paginator.get_paginated_response(serialized_products)
 
 
 
@@ -1027,6 +1038,11 @@ def get_all_categories(request):
 
 
 
+class CustomPagination(PageNumberPagination):
+    page_size = 10  # Default items per page
+    page_size_query_param = 'page_size'
+    max_page_size = 100  # Limit max items per page
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @verified_user_required
@@ -1044,12 +1060,16 @@ def user_products_and_bids(request):
     if sale_type:
         user_products = user_products.filter(sale_type=sale_type)  # 🔹 Use sale_type instead of sell_type
 
+    # Apply pagination
+    paginator = CustomPagination()
+    paginated_products = paginator.paginate_queryset(user_products, request)
+
     # Serialize data
-    products_serializer = ProductSerializer(user_products, many=True)
+    products_serializer = ProductSerializer(paginated_products, many=True)
     user_bids = Bid.objects.filter(buyer=user)
     bids_serializer = BidSerializer(user_bids, many=True)
 
-    return Response({
+    return paginator.get_paginated_response({
         'user_products': products_serializer.data,
         'user_bids': bids_serializer.data,
     })
