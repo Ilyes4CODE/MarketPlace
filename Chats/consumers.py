@@ -61,7 +61,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if not self.is_user_in_chat(recipient.id):
             self.add_user_to_chat(self.conversation_id, recipient.id)
 
-        message = await self.save_message(self.user, recipient, message_text, picture)
+        message = await self.save_message(self.user, recipient,self.conversation_id, message_text, picture)
         if message:
             await self.channel_layer.group_send(
                 self.room_group_name,
@@ -86,21 +86,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return None
 
     @sync_to_async
-    def save_message(self, sender, recipient, message_text, picture=None):
+    def save_message(self, sender, recipient,conversation_id, message_text, picture=None):
         sender_marketuser = MarketUser.objects.get(profile=sender)
         recipient_marketuser = MarketUser.objects.get(profile=recipient)
 
-        seller = sender_marketuser if sender_marketuser.is_seller else recipient_marketuser
-        buyer = recipient_marketuser if sender_marketuser.is_seller else sender_marketuser
-
-        conversation, created = Conversation.objects.get_or_create(
-            seller=seller, buyer=buyer,
-            defaults={"product": self.get_product_for_conversation(seller, buyer)}
-        )
-
-        if not conversation.product:
-            return None  # Ensure product exists
-
+         # Ensure product exists
+        try:
+            conversation = Conversation.objects.get(pk=conversation_id)
+        except Conversation.DoesNotExist as e :
+            raise ValueError("There is no Conversation")
+        
         message = Message.objects.create(
             sender=sender_marketuser,
             recipient=recipient_marketuser,

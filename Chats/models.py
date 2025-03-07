@@ -24,7 +24,7 @@ class Message(models.Model):
     seen = models.BooleanField(default=False)  # Message read status
 
     def __str__(self):
-        return f"Message from {self.sender.profile.username} to {self.recipient.profile.username} at {self.timestamp}"
+        return f"Message from {self.sender} to {self.recipient} at {self.timestamp}"
     
 class Notification(models.Model):
     user = models.ForeignKey(MarketUser, on_delete=models.CASCADE, related_name='general_notifications')  # ✅ Unique related_name

@@ -102,10 +102,6 @@ def list_notifications(request):
 @verified_user_required
 @not_banned_user_required
 def start_conversation(request, product_id):
-    """
-    Start a new conversation between the authenticated user (buyer) and a seller
-    for a specific product. If a conversation already exists, return it.
-    """
     buyer = request.user.marketuser  # The authenticated user is the buyer
 
     try:
@@ -114,7 +110,8 @@ def start_conversation(request, product_id):
     except Product.DoesNotExist:
         return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    # Check if the conversation already exists or create a new one
+    if buyer == seller : 
+        return Response({"info":"you cannot message youself"},status=status.HTTP_400_BAD_REQUEST)
     conversation, created = Conversation.objects.get_or_create(
         seller=seller,
         buyer=buyer,
