@@ -2,158 +2,135 @@ import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from asgiref.sync import sync_to_async
 from django.core.exceptions import ObjectDoesNotExist
-from Chats.models import Conversation, Message, Notification
+from Chats.models import Conversation, Message, Notification,ChatNotification
 from Auth.models import MarketUser
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import Q
 from channels.db import database_sync_to_async
 import logging
 from django.utils.dateformat import format
-
+from django.contrib.auth import get_user_model
+from django.conf import settings
+import redis
+import os
+from Product.models import Product
 # Store active WebSocket connections for chats and notifications
+REDIS_URL = os.getenv("REDIS_URL")
+redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 active_chat_connections = {}
 active_notification_connections = {}
 logger = logging.getLogger(__name__)
+User = get_user_model()
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
-        """Handles new WebSocket connections for chat and marks messages as seen when user enters."""
-        self.conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
-        self.room_group_name = f"chat_{self.conversation_id}"
-        
-        # ✅ Check if user is authenticated
         self.user = self.scope["user"]
-        if self.user.is_anonymous:
+        if not self.user.is_authenticated:
             await self.close()
             return
 
-        # ✅ Add the user to the chat group
+        self.conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
+        self.room_group_name = f"chat_{self.conversation_id}"
+
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
-        
-        print(f"✅ {self.user.username} connected to chat {self.conversation_id}")
 
-        # ✅ Mark all unread messages as seen when the user enters the conversation
-        await self.mark_messages_as_seen(self.conversation_id, self.user.id)
-
-        # ✅ Notify the chat that messages were seen
-        response = {
-            "action": "messages_seen",
-            "user_id": self.user.id,
-        }
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {"type": "chat_message", "message": response},
-        )
+        # Add user to Redis chat tracking
+        self.add_user_to_chat(self.conversation_id, self.user.id)
 
     async def disconnect(self, close_code):
-        """Handles WebSocket disconnections for chat."""
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
-        print(f"🚪 {self.user.username} disconnected from chat {self.conversation_id}")
+
+        # Remove user from Redis tracking
+        self.remove_user_from_chat(self.conversation_id, self.user.id)
 
     async def receive(self, text_data):
-        """Handles incoming chat messages and marks messages as seen when appropriate."""
         data = json.loads(text_data)
+        message_text = data.get("message")
+        recipient_id = data.get("recipient_id")
+        picture = data.get("picture")  # Optional
 
-        # ✅ If there's "content", it's a new message
-        if "content" in data:
-            content = data["content"]
-            picture = data.get("picture", None)
+        if not message_text and not picture:
+            return  # Ignore empty messages
 
-            conversation, seller, buyer = await self.get_conversation_and_users(self.conversation_id)
+        recipient = await self.get_user_by_id(recipient_id)
+        if not recipient:
+            return  # Ignore invalid recipient
 
-            if not conversation:
-                await self.send(json.dumps({"error": "Conversation not found"}))
-                return
+        # Ensure recipient is part of the conversation
+        if not self.is_user_in_chat(recipient.id):
+            self.add_user_to_chat(self.conversation_id, recipient.id)
 
-            # if self.user not in [seller, buyer]:
-            #     print(seller)
-            #     print(buyer)
-            #     print(self.user)
-            #     await self.send(json.dumps({"error": "Unauthorized"}))
-            #     return
-
-            # ✅ Save the message
-            new_message = await self.save_message(conversation, self.user, content, picture)
-
-            # ✅ Identify recipient
-            recipient = buyer if self.user == seller else seller
-
-            # ✅ Create notification for recipient
-            await self.create_notification(recipient, new_message)
-
-            # ✅ Broadcast message to all users in this chat
-            response = {
-                "action": "new_message",
-                "sender": self.user.username,
-                "content": content,
-                "picture": picture,
-                "timestamp": str(new_message.timestamp),
-                "seen": new_message.seen,
-            }
+        message = await self.save_message(self.user, recipient, message_text, picture)
+        if message:
             await self.channel_layer.group_send(
                 self.room_group_name,
-                {"type": "chat_message", "message": response},
+                {
+                    "type": "chat_message",
+                    "message": message_text,
+                    "sender_id": self.user.id,
+                    "recipient_id": recipient.id,
+                    "picture": picture,
+                    "timestamp": str(message.timestamp),
+                },
             )
-
-        # ✅ If user is in the chat, mark messages as seen
-        if self.user in [seller, buyer]:
-            await self.mark_messages_as_seen(self.conversation_id, self.user.id)
-
-            seen_response = {
-                "action": "messages_seen",
-                "user_id": self.user.id,
-            }
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {"type": "chat_message", "message": seen_response},
-            )
-
 
     async def chat_message(self, event):
-        """Sends messages to all users in the chat."""
-        await self.send(json.dumps(event["message"]))
+        await self.send(text_data=json.dumps(event))
 
-    @sync_to_async(thread_sensitive=True)
-    def get_conversation_and_users(self, conversation_id):
-        """Fetches the conversation, seller, and buyer from the database."""
+    @sync_to_async
+    def get_user_by_id(self, user_id):
         try:
-            conversation = Conversation.objects.select_related("seller", "buyer").get(id=conversation_id)
-            return conversation, conversation.seller, conversation.buyer
-        except ObjectDoesNotExist:
-            return None, None, None
+            return User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return None
 
-    @sync_to_async(thread_sensitive=True)
-    def save_message(self, conversation, sender, content, picture):
-        """Saves a new message to the database."""
-        # Ensure sender is a MarketUser instance
-        market_user = MarketUser.objects.get(profile=sender)  # Adjust based on your model relation
-        
-        return Message.objects.create(
+    @sync_to_async
+    def save_message(self, sender, recipient, message_text, picture=None):
+        sender_marketuser = MarketUser.objects.get(profile=sender)
+        recipient_marketuser = MarketUser.objects.get(profile=recipient)
+
+        seller = sender_marketuser if sender_marketuser.is_seller else recipient_marketuser
+        buyer = recipient_marketuser if sender_marketuser.is_seller else sender_marketuser
+
+        conversation, created = Conversation.objects.get_or_create(
+            seller=seller, buyer=buyer,
+            defaults={"product": self.get_product_for_conversation(seller, buyer)}
+        )
+
+        if not conversation.product:
+            return None  # Ensure product exists
+
+        message = Message.objects.create(
+            sender=sender_marketuser,
+            recipient=recipient_marketuser,
             conversation=conversation,
-            sender=market_user,  # Use MarketUser instead of User
-            content=content,
-            picture=picture,
+            content=message_text,
+            picture=picture
         )
 
-    @sync_to_async(thread_sensitive=True)
-    def mark_messages_as_seen(self, conversation_id, user_id):
-            """Marks messages as seen (updates messages from the other user)."""
-            Message.objects.filter(
-                ~Q(sender_id=user_id),  # ✅ Place Q object first
-                conversation_id=conversation_id,
-                seen=False
-            ).update(seen=True)
+        return message
 
-    @sync_to_async(thread_sensitive=True)
-    def create_notification(self, user, message):
-        """Creates a notification for the recipient when a message is sent."""
-        return Notification.objects.create(
-            user=user,
-            message=message,
-        )
-    
+    @sync_to_async
+    def get_product_for_conversation(self, seller, buyer):
+        return Product.objects.filter(seller=seller, conversation__buyer=buyer).first()
 
+    def add_user_to_chat(self, conversation_id, user_id):
+        redis_client.sadd(f"chat_users:{conversation_id}", user_id)
+
+    def remove_user_from_chat(self, conversation_id, user_id):
+        redis_client.srem(f"chat_users:{conversation_id}", user_id)
+
+    def is_user_in_chat(self, user_id):
+        user_ids = redis_client.smembers(f"chat_users:{self.conversation_id}")
+        if str(user_id) in user_ids:
+            return True
+        return Conversation.objects.filter(id=self.conversation_id).filter(
+            Q(seller__profile__id=user_id) | Q(buyer__profile__id=user_id)
+        ).exists()
+
+        
+        
 class NotificationConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         """Handles WebSocket connection and registers user for notifications."""

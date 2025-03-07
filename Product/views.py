@@ -646,11 +646,11 @@ def list_products(request):
         )
 
     # Sorting by price (lowest available price)
-    if price_order == "asc":
+    if price_order == "Min":
         products = products.annotate(
             effective_price=Coalesce('price', 'starting_price')  # Use the first non-null value
         ).order_by("effective_price")
-    elif price_order == "desc":
+    elif price_order == "Max":
         products = products.annotate(
             effective_price=Coalesce('price', 'starting_price')
         ).order_by("-effective_price")
@@ -672,7 +672,8 @@ def list_products(request):
         serialized_product["seller"] = {
             "id": seller.id,
             "name": seller.name,
-            "profile_picture": seller.profile_picture.url if seller.profile_picture else None
+            "profile_picture": seller.profile_picture.url if seller.profile_picture else None,
+            "phone_number" : seller.phone
         }
         
         # Include category name in the response (handle None case)
