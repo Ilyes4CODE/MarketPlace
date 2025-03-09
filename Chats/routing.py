@@ -10,4 +10,5 @@ websocket_routes = [
     path("ws/Stats/",MarketplaceStatsConsumer.as_asgi()),
     re_path(r'ws/ticket/(?P<ticket_id>\d+)/$', TicketChatConsumer.as_asgi()),
     re_path(r'ws/admin/tickets/$', AdminTicketConsumer.as_asgi()),
+    path('ws/Chat/Notifications/',consumers.ChatNotificationConsumer.as_asgi()),
 ]

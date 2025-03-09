@@ -6,3 +6,4 @@ from .models import *
 admin.site.register(Conversation)
 admin.site.register(Message)
 admin.site.register(Notification)
+admin.site.register(ChatNotification)
