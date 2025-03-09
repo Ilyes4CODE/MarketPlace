@@ -997,7 +997,15 @@ def create_category(request):
 @swagger_auto_schema(
     method='get',
     operation_summary="عرض جميع التصنيفات",
-    operation_description="يقوم هذا الطلب بجلب جميع التصنيفات المسجلة في النظام.",
+    operation_description="يقوم هذا الطلب بجلب جميع التصنيفات المسجلة في النظام. يمكنك أيضًا البحث عن تصنيف معين باستخدام اسم التصنيف.",
+    manual_parameters=[
+        openapi.Parameter(
+            'search',
+            openapi.IN_QUERY,
+            description="ابحث عن تصنيف معين باستخدام الاسم (بحث جزئي غير حساس لحالة الأحرف).",
+            type=openapi.TYPE_STRING
+        )
+    ],
     responses={
         200: openapi.Response(
             description="تم استرجاع التصنيفات بنجاح",
@@ -1030,13 +1038,14 @@ def create_category(request):
 )
 @api_view(['GET'])
 def get_all_categories(request):
-    categories = Category.objects.all()
+    search_query = request.GET.get('search', '')  # Get search query from request parameters
+    categories = Category.objects.filter(name__icontains=search_query) if search_query else Category.objects.all()
+    
     if not categories.exists():
         return Response({"message": "لا توجد تصنيفات متاحة."}, status=status.HTTP_404_NOT_FOUND)
     
     serializer = CategorySerializer(categories, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
-
 
 
 class CustomPagination(PageNumberPagination):

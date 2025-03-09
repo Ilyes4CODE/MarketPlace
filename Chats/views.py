@@ -43,6 +43,7 @@ def mark_messages_as_seen(request, conversation_id):
 @verified_user_required
 @not_banned_user_required
 def list_conversations(request):
+    
     user = request.user.marketuser
     conversations = Conversation.objects.filter(seller=user) | Conversation.objects.filter(buyer=user)
     serializer = ConversationSerializer(conversations, many=True)
