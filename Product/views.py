@@ -1041,9 +1041,6 @@ def get_all_categories(request):
     search_query = request.GET.get('search', '')  # Get search query from request parameters
     categories = Category.objects.filter(name__icontains=search_query) if search_query else Category.objects.all()
     
-    if not categories.exists():
-        return Response({"message": "لا توجد تصنيفات متاحة."}, status=status.HTTP_404_NOT_FOUND)
-    
     serializer = CategorySerializer(categories, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
