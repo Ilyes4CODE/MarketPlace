@@ -123,12 +123,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return str(user_id) in user_ids
 
     async def send_chat_notification(self, recipient_id, message_text):
+        sender_marketuser = await self.get_market_user(self.user)
+        
+        sender_profile_pic = await sync_to_async(lambda: sender_marketuser.profile_picture.url if sender_marketuser.profile_picture else None)()
+
         await self.channel_layer.group_send(
             f"notifications_{recipient_id}",
             {
                 "type": "chat_notification",
                 "message": message_text,
                 "recipient_id": recipient_id,
+                "sender_id": self.user.id,
+                "sender_profile_pic": sender_profile_pic,
                 "timestamp": str(await self.get_current_timestamp()),
             },
         )

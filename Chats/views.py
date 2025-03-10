@@ -8,6 +8,8 @@ from .serializer import ConversationSerializer, MessageSerializer, NotificationS
 from Product.models import Product
 from rest_framework import status
 from decorators import verified_user_required , not_banned_user_required
+from django.db.models import Q
+
 @swagger_auto_schema(
     method="post",
     operation_description="Mark all messages in a conversation as seen by the user.",
@@ -43,9 +45,19 @@ def mark_messages_as_seen(request, conversation_id):
 @verified_user_required
 @not_banned_user_required
 def list_conversations(request):
-    
     user = request.user.marketuser
-    conversations = Conversation.objects.filter(seller=user) | Conversation.objects.filter(buyer=user)
+    search_query = request.GET.get('search', '')
+
+    # Get conversations where the user is a seller or buyer
+    conversations = Conversation.objects.filter(Q(seller=user) | Q(buyer=user))
+
+    # Apply search filter if provided
+    if search_query:
+        conversations = conversations.filter(
+            Q(seller=user, buyer__name__icontains=search_query) | 
+            Q(buyer=user, seller__name__icontains=search_query)
+        )
+
     serializer = ConversationSerializer(conversations, many=True)
     return Response(serializer.data)
 
