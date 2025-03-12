@@ -52,7 +52,6 @@ INSTALLED_APPS = [
     'panel',
     'channels',
     'Tickets',
-    'django_celery_beat',
 ]
 firebase_json_str = os.getenv("FIREBASE_CREDENTIALS_JSON")
 
@@ -142,9 +141,6 @@ MIDDLEWARE = [
     
 ]
 
-CELERY_BROKER_URL = 'rediss://:ATmWAAIjcDE0NGIzM2NmYTZkMzk0YTUxOTkzMWIyM2JkMmVkNmIxOXAxMA@notable-colt-14742.upstash.io:6379'  # Redis as the broker
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
 
 ROOT_URLCONF = 'MarketPlace.urls'
 
