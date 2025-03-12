@@ -1058,18 +1058,25 @@ def user_products_and_bids(request):
     user = request.user.marketuser
 
     # Get 'sale_type' filter from query parameters (optional)
-    sale_type = request.GET.get('sell_type', None)  # Keep 'sell_type' in query for consistency
+    sale_type = request.GET.get('sell_type', None)  
 
     # Filter products by seller
     user_products = Product.objects.filter(seller=user)
 
     # Apply 'sale_type' filter if provided
     if sale_type:
-        user_products = user_products.filter(sale_type=sale_type)  # 🔹 Use sale_type instead of sell_type
+        user_products = user_products.filter(sale_type=sale_type)  
+
+    # 🔹 Filter **Simple Products** (sold) & **Auction Products** (in history)
+    sold_products = user_products.filter(sale_type="عادي", sold=True)
+    history_products = user_products.filter(sale_type="مزاد", is_in_history=True)
+
+    # Combine results
+    filtered_products = sold_products | history_products
 
     # Apply pagination
     paginator = CustomPagination()
-    paginated_products = paginator.paginate_queryset(user_products, request)
+    paginated_products = paginator.paginate_queryset(filtered_products, request)
 
     # Serialize data
     products_serializer = ProductSerializer(paginated_products, many=True)
@@ -1078,7 +1085,7 @@ def user_products_and_bids(request):
 
     return paginator.get_paginated_response({
         'user_products': products_serializer.data,
-        'user_bids': bids_serializer.data,
+        'user_bids': bids_serializer.data, 
     })
 
 

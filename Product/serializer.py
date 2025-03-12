@@ -15,7 +15,8 @@ class ProductSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'description', 'price', 'starting_price', 'buy_now_price', 
             'duration', 'bid_end_time', 'closed', 'currency', 'condition', 'location', 
-            'is_approved', 'sale_type', 'seller', 'photos','category'
+            'is_approved', 'sale_type', 'seller', 'photos','category','is_in_history',
+            'closed_at'
         ]
         read_only_fields = ['id', 'is_approved', 'seller', 'bid_end_time', 'closed']
 

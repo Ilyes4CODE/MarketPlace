@@ -34,16 +34,60 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.room_group_name = f"chat_{self.conversation_id}"
         self.notification_group_name = f"notifications_{self.user.id}"
 
-        # Add user to their chat group
+        # 🔹 Verify if the user is part of this conversation
+        is_participant = await self.is_user_part_of_conversation(self.conversation_id, self.user.id)
+        if not is_participant:
+            await self.close()
+            return
+
+        # Add user to chat and notification groups
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
-
-        # Add user to their notification group
         await self.channel_layer.group_add(self.notification_group_name, self.channel_name)
-
+        
         await self.accept()
+        print(f"User {self.user.pk} is connected to conversation {self.conversation_id}")
 
-        # Track active users in Redis
+        # Track active users in Redis 
         await self.add_user_to_chat(self.conversation_id, self.user.id)
+
+        # 🔹 Load old messages and send them to the user
+        old_messages = await self.get_old_messages(self.conversation_id)
+        receiver_info = await self.get_receiver_info(self.conversation_id, self.user.id)
+
+        await self.send(text_data=json.dumps({
+            "type": "old_messages",
+            "messages": old_messages,
+            "receiver": receiver_info
+        }))
+
+    @sync_to_async
+    def is_user_part_of_conversation(self, conversation_id, user_id):
+        """Check if the user is either the buyer or seller in the conversation"""
+        try:
+            conversation = Conversation.objects.get(id=conversation_id)
+            return conversation.buyer.profile.id == user_id or conversation.seller.profile.id == user_id
+        except Conversation.DoesNotExist:
+            return False
+
+    @sync_to_async
+    def get_old_messages(self, conversation_id):
+        """Fetch old messages for the conversation"""
+        messages = Message.objects.filter(conversation_id=conversation_id).order_by("timestamp")
+        return [{"sender": msg.sender.id, "content": msg.content, "timestamp": msg.timestamp.isoformat()} for msg in messages]
+
+    @sync_to_async
+    def get_receiver_info(self, conversation_id, current_user_id):
+        """Get receiver details (name, picture)"""
+        try:
+            conversation = Conversation.objects.get(id=conversation_id)
+            receiver = conversation.seller if conversation.buyer.profile.id == current_user_id else conversation.buyer
+            return {
+                "id": receiver.id,
+                "name": receiver.name,
+                "profile_picture": receiver.profile_picture.url if receiver.profile_picture else None
+            }
+        except Conversation.DoesNotExist:
+            return {"error": "Conversation not found"}
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
@@ -76,13 +120,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
             "username": sender_marketuser.name,
             "profile_picture": sender_marketuser.profile_picture.url if sender_marketuser.profile_picture else None
         })()
-
+        
         recipient_data = await database_sync_to_async(lambda: {
             "id": recipient_marketuser.pk,
             "username": recipient_marketuser.name,
             "profile_picture": recipient_marketuser.profile_picture.url if recipient_marketuser.profile_picture else None
         })()
-
+        print(recipient_data)
         # ✅ Fix: Access `profile.pk` inside a sync-to-async wrapper
         recipient_profile_pk = await database_sync_to_async(lambda: recipient_marketuser.profile.pk)()
 

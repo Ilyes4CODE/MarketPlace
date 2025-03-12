@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from datetime import timedelta
+
 # Create your models here.
 
 class Category(models.Model):
@@ -35,6 +36,7 @@ class Product(models.Model):
     title = models.CharField(max_length=100)
     description = models.TextField()
     category = models.ForeignKey(Category, on_delete=models.CASCADE, null=True, related_name='products')
+    is_in_history = models.BooleanField(default=False)
     
     # Simple Product Fields
     price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -45,7 +47,8 @@ class Product(models.Model):
     duration = models.IntegerField(null=True, blank=True)  # Duration in hours
     bid_end_time = models.DateTimeField(null=True, blank=True)  # Time when bidding should close
     closed = models.BooleanField(default=False)  # True if the bid has ended
-
+    closed_at = models.DateTimeField(null=True, blank=True)
+    
     currency = models.CharField(max_length=23, choices=CURRENCY_CHOICES, default='دولار')
     upload_date = models.DateTimeField(default=timezone.now)
     condition = models.CharField(max_length=10, choices=CONDITION_CHOICES, default='جديد')
@@ -55,16 +58,55 @@ class Product(models.Model):
     sold = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
-        if self.sale_type == 'مزاد' and self.duration and not self.bid_end_time:
-            self.bid_end_time = self.upload_date + timedelta(hours=self.duration)  # Set end time
+        """Automatically sets bid_end_time and schedules closing."""
+        is_new = self.pk is None  # Check if the product is new
 
-        super().save(*args, **kwargs)
+        if self.sale_type == 'مزاد' and self.duration:
+            if not self.bid_end_time:
+                self.bid_end_time = self.upload_date + timedelta(hours=self.duration)
 
-    def check_bid_status(self):
-        """Automatically closes the bid if time is up."""
+        super().save(*args, **kwargs)  # Save the product first
+
+        # Automatically close bid if the time has passed
         if self.sale_type == 'مزاد' and self.bid_end_time and timezone.now() >= self.bid_end_time:
-            self.closed = True
-            self.save()
+            self.close_bidding()
+
+    def close_bidding(self):
+        from .utils import start_conversation,send_real_time_notification
+        """Closes the bid, selects a winner, and schedules history move."""
+        if self.closed:
+            return  # Already closed
+
+        self.closed = True
+        self.closed_at = timezone.now()
+        self.save()
+
+        highest_bid = Bid.objects.filter(product=self, status="pending").order_by('-amount').first()
+
+        if highest_bid:
+            highest_bid.winner = True
+            highest_bid.save()
+
+            send_real_time_notification(self.seller, f"المزاد على {self.title} قد انتهى! الفائز هو {highest_bid.buyer.name}.")
+            send_real_time_notification(highest_bid.buyer, f"لقد فزت بالمزاد على {self.title} بمبلغ {highest_bid.amount} {self.currency}.")
+            
+            start_conversation(self.seller, highest_bid.buyer, self)
+        else:
+            send_real_time_notification(self.seller, f"المزاد على {self.title} قد انتهى بدون عروض.")
+
+        # Schedule moving to history after 24 hours
+        self.move_to_history_time = timezone.now() + timedelta(days=1)
+        self.save()
+
+    def check_and_move_to_history(self):
+        """Moves the product to history after 24 hours of closing."""
+        if self.closed and not self.is_in_history:
+            time_since_closed = timezone.now() - self.closed_at
+            if time_since_closed >= timedelta(days=1):
+                self.is_in_history = True
+                self.save()
+
+    
 
     def __str__(self):
         return f"{self.title} - {self.price or self.starting_price} ({'Closed' if self.closed else 'Active'})"
