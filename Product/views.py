@@ -1128,8 +1128,6 @@ def close_bid(request, product_id):
         product.closed = True
         product.closed_at = now
         product.save()
-
-        # Find the highest bid
         highest_bid = Bid.objects.filter(product=product, status="accepted").order_by('-amount').first()
 
         if highest_bid:
