@@ -1056,16 +1056,22 @@ class CustomPagination(PageNumberPagination):
 @not_banned_user_required
 def user_products_and_bids(request):
     user = request.user.marketuser
-
-    # Get 'sale_type' filter from query parameters (optional)
     sale_type = request.GET.get('sell_type', None)  
 
-    # Filter products by seller
+    # 🔹 Get user's products
     user_products = Product.objects.filter(seller=user)
 
     # Apply 'sale_type' filter if provided
     if sale_type:
         user_products = user_products.filter(sale_type=sale_type)  
+
+    # 🔍 **Check & update expired auctions**
+    now = timezone.now()
+    expired_auctions = user_products.filter(sale_type="مزاد", closed=True, is_in_history=False, closed_at__lte=now - timezone.timedelta(days=1))
+
+    for product in expired_auctions:
+        product.is_in_history = True
+        product.save()
 
     # 🔹 Filter **Simple Products** (sold) & **Auction Products** (in history)
     sold_products = user_products.filter(sale_type="عادي", sold=True)
@@ -1090,7 +1096,6 @@ def user_products_and_bids(request):
 
 
 
-
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])  # Ensure only authenticated users can delete categories
 def delete_category(request, pk):
@@ -1104,3 +1109,43 @@ def delete_category(request, pk):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@verified_user_required
+@not_banned_user_required
+def close_bid(request, product_id):
+    """
+    Manually close a bid and move it to history.
+    """
+    try:
+        now = timezone.now()
+        product = Product.objects.get(id=product_id, sale_type='مزاد', closed=False)
+
+        if product.bid_end_time > now:
+            return Response({"error": "Auction is still running."}, status=status.HTTP_400_BAD_REQUEST)
+
+        product.sold = True
+        product.closed = True
+        product.closed_at = now
+        product.save()
+
+        # Find the highest bid
+        highest_bid = Bid.objects.filter(product=product, status="accepted").order_by('-amount').first()
+
+        if highest_bid:
+            highest_bid.winner = True
+            highest_bid.save()
+
+            # Notify seller & winner
+            send_real_time_notification(product.seller, f"المزاد على {product.title} قد انتهى! الفائز هو {highest_bid.buyer.name}.")
+            send_real_time_notification(highest_bid.buyer, f"لقد فزت بالمزاد على {product.title} بمبلغ {highest_bid.amount} {product.currency}.")
+
+            # Create a conversation between seller & winner
+            start_conversation(product.seller, highest_bid.buyer, product)
+        else:
+            send_real_time_notification(product.seller, f"المزاد على {product.title} قد انتهى بدون عروض.")
+
+        return Response({"success": f"Bid closed for {product.title}."}, status=status.HTTP_200_OK)
+
+    except Product.DoesNotExist:
+        return Response({"error": "Product not found or already closed."}, status=status.HTTP_404_NOT_FOUND)
