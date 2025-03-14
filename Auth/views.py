@@ -240,7 +240,8 @@ def user_info(request):
         "id": user.id,
         "username": user.username,
         "email": user.email,
-        "is_admin": is_admin
+        "is_admin": is_admin,
+        "profile_picture" : market_user.profile_picture.url
     })
     
 

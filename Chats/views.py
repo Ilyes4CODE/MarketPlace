@@ -45,7 +45,7 @@ def mark_messages_as_seen(request, conversation_id):
 @verified_user_required
 @not_banned_user_required
 def list_conversations(request):
-    user = request.user.marketuser
+    user = request.user.marketuser  # Get logged-in user
     search_query = request.GET.get('search', '')
 
     # Get conversations where the user is a seller or buyer
@@ -58,8 +58,32 @@ def list_conversations(request):
             Q(buyer=user, seller__name__icontains=search_query)
         )
 
-    serializer = ConversationSerializer(conversations, many=True)
-    return Response(serializer.data)
+    # Format the response to include only the other user's details
+    conversation_list = []
+    for convo in conversations:
+        other_user = convo.seller if convo.buyer == user else convo.buyer
+        
+        # Fetch the latest message (if any)
+        last_message = Message.objects.filter(conversation=convo).order_by('-timestamp').first()
+
+        conversation_list.append({
+            "id": convo.id,
+            "product_id": convo.product.id,
+            "created_at": convo.created_at,
+            "last_message": {
+                "id": last_message.id if last_message else None,
+                "content": last_message.content if last_message else None,
+                "timestamp": last_message.timestamp.strftime("%Y-%m-%d %H:%M:%S") if last_message else None,
+                "sender_id": last_message.sender.id if last_message else None
+            },
+            "chatting_with": {
+                "id": other_user.id,
+                "name": other_user.name,
+                "profile_picture": other_user.profile_picture.url if other_user.profile_picture else None
+            }
+        })
+
+    return Response(conversation_list)
 
 
 @swagger_auto_schema(
@@ -96,7 +120,7 @@ def list_messages(request, conversation_id):
 @not_banned_user_required
 def list_notifications(request):
     user = request.user.marketuser
-    notifications = Notification.objects.filter(user=user, is_read=False)  # Fetch unread notifications
+    notifications = Notification.objects.filter(user=user)  # Fetch unread notifications
     serializer = NotificationSerializer(notifications, many=True)
     return Response(serializer.data)
 

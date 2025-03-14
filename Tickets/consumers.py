@@ -3,85 +3,151 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import Ticket, Message
 from asgiref.sync import sync_to_async
 from django.utils.timezone import localtime
-
+from django.core.exceptions import ObjectDoesNotExist
+from channels.db import database_sync_to_async
+from Auth.models import MarketUser
 class TicketChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
+        self.user = self.scope["user"]
         self.ticket_id = self.scope["url_route"]["kwargs"]["ticket_id"]
         self.room_group_name = f"ticket_{self.ticket_id}"
 
-        # Add user to the WebSocket group
-        await self.channel_layer.group_add(
-            self.room_group_name,
-            self.channel_name
-        )
+        # Validate ticket existence and ownership
+        # ticket = await self.get_ticket_with_profile()
+        # print(f"debug : {ticket.user.pk} == {self.user.pk} ")
+        # if not ticket:
+        #     await self.send_error("Ticket not found.")
+        #     await self.close()
+        #     return
 
+        # # Fix: Ensure safe access to the user's profile
+        # user_profile_id = ticket.user.profile.id if ticket.user.profile else None
+        # if user_profile_id != self.user.id:
+        #     await self.send_error("You are not authorized to access this ticket.")
+        #     await self.close()
+        #     return
+
+        # Join WebSocket group
+        await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
-
-        # 🔹 Load and send old messages upon connection
+        print(self.user.id)
+        # Send old messages
         old_messages = await self.get_old_messages()
         await self.send(text_data=json.dumps({
             "type": "old_messages",
             "messages": old_messages
         }))
 
+
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(
-            self.room_group_name,
-            self.channel_name
-        )
+        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
     async def receive(self, text_data):
-        data = json.loads(text_data)
-        message_content = data["message"]
-        sender_id = data["sender"]
+        """Handle incoming WebSocket messages."""
+        try:
+            data = json.loads(text_data)
+            message_content = data.get("message", "").strip()
 
-        # Save the message in the database
-        message = await self.save_message(sender_id, message_content)
+            if not message_content:
+                await self.send_error("Message content cannot be empty.")
+                return
 
-        # Broadcast the message to the group
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                "type": "chat_message",
-                "message": {
-                    "id": message.id,
-                    "content": message.content,
-                    "timestamp": localtime(message.timestamp).isoformat(),
-                    "sender": sender_id
+            # Save the message
+            user_data = await self.get_user_data(self.user.id)
+            message = await self.save_message(user_data["id"], message_content)
+
+            # Fetch user details (name & picture)
+            
+            print(user_data)
+            # Broadcast message to the group
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    "type": "chat_message",
+                    "message": {
+                        "id": message.id,
+                        "content": message.content,
+                        "timestamp": localtime(message.timestamp).isoformat(),
+                        "sender": self.user.id,
+                        "sender_name": user_data["name"],  
+                        "sender_picture": user_data["picture"]  
+                    }
                 }
-            }
-        )
+            )
+        except json.JSONDecodeError:
+            await self.send_error("Invalid JSON format.")
+        except Exception as e:
+            await self.send_error(f"An error occurred: {str(e)}")
 
+
+
+    @sync_to_async(thread_sensitive=True)
+    def get_ticket_with_profile(self):
+        """Fetch the ticket with related user profile."""
+        try:
+            return Ticket.objects.select_related("user__profile").get(id=self.ticket_id)
+        except Ticket.DoesNotExist:
+            return None
     async def chat_message(self, event):
-        """Send new message to WebSocket client"""
+        """Send a new message to the WebSocket client."""
         await self.send(text_data=json.dumps({
             "type": "new_message",
             "message": event["message"]
         }))
+    async def get_user_data(self, user_id):
+        """Fetch user name and profile picture from MarketUser."""
+        from django.db.models import Prefetch
+        from django.contrib.auth import get_user_model
+        
 
-    @sync_to_async
+        User = get_user_model()
+
+        try:
+            # Fetch MarketUser linked to this User ID
+            market_user = await database_sync_to_async(MarketUser.objects.get)(profile__id=user_id)
+
+            return {
+                "id" : market_user.pk,
+                "name": market_user.name,  # Get MarketUser's name
+                "picture": market_user.profile_picture.url if market_user.profile_picture else None
+            }
+        except MarketUser.DoesNotExist:
+            return {
+                "name": "Unknown",
+                "picture": None
+            }
+    async def send_error(self, error_message):
+        """Send an error message to the client."""
+        await self.send(text_data=json.dumps({"type": "error", "message": error_message}))
+
+    @sync_to_async(thread_sensitive=True)
+    def get_ticket(self):
+        """Fetch the ticket from the database."""
+        try:
+            return Ticket.objects.select_related("user").get(id=self.ticket_id)
+        except ObjectDoesNotExist:
+            return None
+
+    @sync_to_async(thread_sensitive=True)
     def get_old_messages(self):
-        """Fetch old messages from the database"""
+        """Fetch old messages from the database."""
         messages = Message.objects.filter(ticket_id=self.ticket_id).order_by("timestamp")
         return [
             {
                 "id": msg.id,
                 "content": msg.content,
                 "timestamp": localtime(msg.timestamp).isoformat(),
-                "sender": msg.sender.id
+                "sender_id" : msg.sender.profile.pk,
+                "sender": msg.sender.name,
+                "sender_picture" : msg.sender.profile_picture.url,
             }
             for msg in messages
         ]
 
-    @sync_to_async
+    @sync_to_async(thread_sensitive=True)
     def save_message(self, sender_id, content):
-        """Save new message to the database"""
-        return Message.objects.create(
-            ticket_id=self.ticket_id,
-            sender_id=sender_id,
-            content=content
-        )
-
+        """Save a new message to the database."""
+        return Message.objects.create(ticket_id=self.ticket_id, sender_id=sender_id, content=content)
 
 class AdminTicketConsumer(AsyncWebsocketConsumer):
     async def connect(self):

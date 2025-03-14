@@ -94,6 +94,7 @@ def approve_products(request,product_id):
     if product.is_approved :
         return Response({'info':'already approved'},status=status.HTTP_404_NOT_FOUND)
     product.is_approved = True
+    send_real_time_notification(product.seller,"لقد تم قبول منتوجك ينجاح")
     product.save()
     return Response({'info':'product approved successfully ! '},status=status.HTTP_202_ACCEPTED)
 

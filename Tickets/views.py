@@ -36,14 +36,17 @@ def delete_predefined_message(request, pk):
 @permission_classes([IsAuthenticated])
 def get_user_tickets(request):
     user = request.user.marketuser  # Get MarketUser from logged-in User
-    if user.is_admin:  # Check if the user is an admin
+    
+    # 🔍 Check if user is in the "Admin" group
+    is_admin = request.user.groups.filter(name="Admin").exists()
+
+    if is_admin:  
         tickets = Ticket.objects.all()  # Admin sees all tickets
     else:
         tickets = Ticket.objects.filter(user=user)  # Regular user sees only their own tickets
 
     serializer = TicketSerializer(tickets, many=True)
     return Response(serializer.data)
-
 
 
 class TicketCreateView(generics.CreateAPIView):
@@ -53,7 +56,8 @@ class TicketCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        user = MarketUser.objects.get(pk=self.request.user.pk)
+        print(self.request.user)
+        user = MarketUser.objects.get(profile=self.request.user)
         ticket = serializer.save(user=user)
 
         # Broadcast the new ticket via WebSockets
