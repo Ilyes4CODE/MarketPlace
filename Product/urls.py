@@ -22,4 +22,5 @@ urlpatterns = [
     path('History/',views.user_products_and_bids),
     path('Delete_category/<int:pk>/',views.delete_category),
     path('close_bid/<int:product_id>/',views.close_bid),
+    path('Get_Auctions/',views.list_auction_products)
 ]

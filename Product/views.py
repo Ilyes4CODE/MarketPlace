@@ -1147,3 +1147,46 @@ def close_bid(request, product_id):
 
     except Product.DoesNotExist:
         return Response({"error": "Product not found or already closed."}, status=status.HTTP_404_NOT_FOUND)
+    
+
+
+
+@api_view(['GET'])
+def list_auction_products(request):
+    """
+    استرجاع قائمة المنتجات من نوع "مزاد" فقط
+    """
+    # Filter only products that are auctions
+    products = Product.objects.filter(is_approved=True, sold=False, sale_type="مزاد")
+    
+    # Apply pagination
+    paginator = CustomPagination()
+    paginated_products = paginator.paginate_queryset(products, request)
+    
+    # Serialize products with seller, category, and bids
+    serialized_products = []
+    for product in paginated_products:
+        serialized_product = ProductSerializer(product).data
+        seller = product.seller  # Assuming 'seller' is a MarketUser instance
+        category = product.category  # Assuming 'category' is a Category instance
+        
+        serialized_product["seller"] = {
+            "id": seller.id,
+            "name": seller.name,
+            "profile_picture": seller.profile_picture.url if seller.profile_picture else None,
+            "phone_number": seller.phone
+        }
+        
+        # Include category name in the response (handle None case)
+        serialized_product["category"] = {
+            "id": category.pk if category else None,
+            "name": category.name if category else "No Category"
+        }
+        
+        # Include all bids for the auction product
+        bids = Bid.objects.filter(product=product).order_by("-amount")  
+        serialized_product["bids"] = BidSerializer(bids, many=True).data
+        
+        serialized_products.append(serialized_product)
+    
+    return paginator.get_paginated_response(serialized_products)

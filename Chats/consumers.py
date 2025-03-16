@@ -15,6 +15,10 @@ import redis
 import os
 from Product.models import Product
 from django.utils.timezone import now
+import base64
+import uuid
+import json
+from django.core.files.base import ContentFile
 # Store active WebSocket connections for chats and notifications
 REDIS_URL = os.getenv("REDIS_URL")
 redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
@@ -73,7 +77,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def get_old_messages(self, conversation_id):
         """Fetch old messages for the conversation"""
         messages = Message.objects.filter(conversation_id=conversation_id).order_by("timestamp")
-        return [{"sender": msg.sender.id, "content": msg.content, "timestamp": msg.timestamp.isoformat()} for msg in messages]
+        return [
+            {
+                "sender": msg.sender.id,
+                "content": msg.content,
+                "timestamp": msg.timestamp.isoformat(),
+                "picture": f"https://marketplace-4m56.onrender.com{msg.picture.url}" if msg.picture else None  # Check if picture exists
+            }
+            for msg in messages
+        ]
 
     @sync_to_async
     def get_receiver_info(self, conversation_id, current_user_id):
@@ -84,7 +96,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return {
                 "id": receiver.id,
                 "name": receiver.name,
-                "profile_picture": receiver.profile_picture.url if receiver.profile_picture else None
+                "profile_picture": f"https://marketplace-4m56.onrender.com{receiver.profile_picture.url}" if receiver.profile_picture else None
             }
         except Conversation.DoesNotExist:
             return {"error": "Conversation not found"}
@@ -96,46 +108,51 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.remove_user_from_chat(self.conversation_id, self.user.id)
 
     async def receive(self, text_data):
+        """Handle receiving messages via WebSocket."""
         data = json.loads(text_data)
         message_text = data.get("message")
-        picture = data.get("picture")  # Optional
+        picture_data = data.get("picture")  # Expecting base64 encoded image
 
-        if not message_text and not picture:
+        if not message_text and not picture_data:
             return  # Ignore empty messages
 
-        # Get the conversation
+        # ✅ Get the conversation
         conversation = await self.get_conversation(self.conversation_id)
         if not conversation:
             return  # Invalid conversation
 
-        # Identify sender and recipient as MarketUser
-        sender_marketuser = await self.get_market_user(self.user)  # Ensure it's MarketUser
+        # ✅ Identify sender and recipient as MarketUser
+        sender_marketuser = await self.get_market_user(self.user)  
         recipient_marketuser = await database_sync_to_async(lambda: (
             conversation.buyer if sender_marketuser == conversation.seller else conversation.seller
         ))()
 
-        # Fetch sender and recipient details safely
+        # ✅ Fetch sender and recipient details safely
         sender_data = await database_sync_to_async(lambda: {
             "id": sender_marketuser.pk,
             "username": sender_marketuser.name,
-            "profile_picture": sender_marketuser.profile_picture.url if sender_marketuser.profile_picture else None
+            "profile_picture": f"https://marketplace-4m56.onrender.com{sender_marketuser.profile_picture.url}" if sender_marketuser.profile_picture else None
         })()
-        
+
         recipient_data = await database_sync_to_async(lambda: {
             "id": recipient_marketuser.pk,
             "username": recipient_marketuser.name,
-            "profile_picture": recipient_marketuser.profile_picture.url if recipient_marketuser.profile_picture else None
+            "profile_picture": f"https://marketplace-4m56.onrender.com{recipient_marketuser.profile_picture.url}" if recipient_marketuser.profile_picture else None
         })()
-        print(recipient_data)
-        # ✅ Fix: Access `profile.pk` inside a sync-to-async wrapper
+
+        # ✅ Ensure recipient profile exists
         recipient_profile_pk = await database_sync_to_async(lambda: recipient_marketuser.profile.pk)()
 
-        print('✅ Recipient Profile PK:', recipient_profile_pk)
+        # ✅ Handle Image Upload (Convert base64 to File)
+        image_file = None
+        if picture_data:
+            image_file = await self.save_image(picture_data)  # ✅ Returns file
 
-        # Save message
-        message = await self.save_message(sender_marketuser, recipient_marketuser, message_text, picture)
+        # ✅ Save message with all fields
+        message = await self.save_message(sender_marketuser, recipient_marketuser, message_text, image_file)
+
         if message:
-            # Broadcast message to chat group
+            # ✅ Broadcast message to chat group
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -143,14 +160,29 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     "message": message_text,
                     "sender": sender_data,
                     "recipient": recipient_data,
-                    "picture": picture,
+                    "picture": f"https://marketplace-4m56.onrender.com{message.picture.url}" if message.picture else None,  # ✅ Correct URL
                     "timestamp": str(message.timestamp),
                 },
             )
 
-            # Send a notification to recipient if they are not online
+            # ✅ Send a notification if recipient is offline
             if not await self.is_user_in_chat(recipient_profile_pk):
                 await self.send_chat_notification(recipient_profile_pk, sender_data, message_text)
+            
+    async def save_image(self, picture_data):
+        """Convert base64 image to Django File and return it (do not save message here)."""
+        try:
+            format, imgstr = picture_data.split(';base64,')  # Extract base64 string
+            ext = format.split('/')[-1]  # Extract file extension
+
+            # Create a unique filename
+            filename = f"{uuid.uuid4()}.{ext}"
+            data = ContentFile(base64.b64decode(imgstr), name=filename)
+
+            return data  # Return the file (not saving Message here)
+        except Exception as e:
+            print("❌ Error saving image:", e)
+            return None
 
     async def chat_message(self, event):
         """Handles chat messages and sends them to the frontend."""

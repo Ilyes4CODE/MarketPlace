@@ -12,7 +12,7 @@ from decorators import admin_required
 from Product.models import Product
 from rest_framework import status
 from Product.utils import send_real_time_notification,start_conversation
-
+from Product.serializer import BidSerializer
 class UserNotificationsView(ListAPIView):
     serializer_class = NotificationBidSerializer
     permission_classes = [IsAuthenticated]
@@ -34,39 +34,22 @@ def manage_bid(request, bid_id):
 
     if action == "accept":
         bid.status = "accepted"
-
-        # 🚀 **Check if this bid meets/exceeds `buy_now_price`**
-        if bid.amount >= bid.product.buy_now_price:
-            bid.product.closed = True
-            bid.product.sold = True
-            bid.product.save()
-
-            # Mark this bid as the winner and reject all others
-            Bid.objects.filter(product=bid.product).update(status="rejected", winner=False)
-            bid.winner = True
-            bid.save()
-
-            # 🔔 Now send notifications (delayed until admin approval)
-            send_real_time_notification(seller, f"Your product '{bid.product.title}' has been sold for {bid.amount} {bid.product.currency}!")
-            send_real_time_notification(buyer, f"Congratulations! You won the bid for '{bid.product.title}' at {bid.amount} {bid.product.currency}.")
-            
-            # Start the conversation between seller & buyer
-            start_conversation(seller, buyer, bid.product)
         
-        else:
-            # Notify only about bid acceptance
-            send_real_time_notification(seller, f"A new bid of {bid.amount} has been placed on your product: {bid.product.title}.")
-            send_real_time_notification(buyer, f"Your bid of {bid.amount} has been accepted by the admin.")
-
+        # 🔔 إرسال إشعارات
+        send_real_time_notification(seller, f"تم قبول المزايدة بقيمة {bid.amount} على منتجك: {bid.product.title}.")
+        send_real_time_notification(buyer, f"تهانينا! تم قبول مزايدتك على '{bid.product.title}' بقيمة {bid.amount}.")
+    
     elif action == "reject":
         bid.status = "rejected"
-        send_real_time_notification(buyer, f"Your bid of {bid.amount} has been rejected by the admin.")
+        
+        # 🔔 إرسال إشعار الرفض
+        send_real_time_notification(buyer, f"عذرًا، تم رفض مزايدتك على '{bid.product.title}' بقيمة {bid.amount}.")
+    
     else:
-        return Response({"error": "Invalid action"}, status=400)
+        return Response({"error": "إجراء غير صالح"}, status=status.HTTP_400_BAD_REQUEST)
 
     bid.save()
-    return Response({"message": f"Bid {action}ed successfully"})
-
+    return Response({"message": f"تم { 'قبول' if action == 'accept' else 'رفض' } المزايدة بنجاح"})
 
 
 @api_view(["GET"])
@@ -122,9 +105,7 @@ def ban_and_unban_users(request,pk):
 @permission_classes([IsAuthenticated])
 @admin_required
 def delete_user(request, pk):
-    """
-    حذف مستخدم بناءً على المعرف (ID)، يُسمح فقط للمشرفين بحذف المستخدمين
-    """
+
     try:
         market_user = MarketUser.objects.get(id=pk)
         user = market_user.profile  # Get the associated Django User
@@ -138,4 +119,42 @@ def delete_user(request, pk):
 
     except MarketUser.DoesNotExist:
         return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])  # Require authentication
+def get_bids(request):
+    buyer_name = request.GET.get("buyer_name", "").strip()
+    product_id = request.GET.get("product_id", "").strip()
+    status_filter = request.GET.get("status", "").strip().lower()
+    date_order = request.GET.get("date_order", "desc").strip().lower()  # Default: newest to oldest
+
+    # Base query
+    bids = Bid.objects.all()
+
+    # Filter by buyer name (case-insensitive search)
+    if buyer_name:
+        bids = bids.filter(buyer__name__icontains=buyer_name)
+
+    # Filter by product ID
+    if product_id.isdigit():  # Ensure product_id is a valid number
+        bids = bids.filter(product_id=product_id)
+
+    # Filter by bid status
+    if status_filter in ["pending", "accepted", "rejected"]:
+        bids = bids.filter(status=status_filter)
+
+    # Sorting by date (default: newest to oldest)
+    if date_order == "asc":
+        bids = bids.order_by("created_at")  # Oldest to newest
+    else:
+        bids = bids.order_by("-created_at")  # Newest to oldest (default)
+
+    # Always keep "pending" bids at the top
+    bids = sorted(bids, key=lambda x: x.status != "pending")
+
+    # Serialize and return the response
+    serializer = BidSerializer(bids, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
 
