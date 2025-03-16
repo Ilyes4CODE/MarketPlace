@@ -6,6 +6,10 @@ from django.utils.timezone import localtime
 from django.core.exceptions import ObjectDoesNotExist
 from channels.db import database_sync_to_async
 from Auth.models import MarketUser
+import base64
+import uuid
+from django.core.files.base import ContentFile
+
 class TicketChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.user = self.scope["user"]
@@ -47,18 +51,21 @@ class TicketChatConsumer(AsyncWebsocketConsumer):
         try:
             data = json.loads(text_data)
             message_content = data.get("message", "").strip()
+            image_data = data.get("picture")  # Expecting base64 image
 
-            if not message_content:
-                await self.send_error("Message content cannot be empty.")
+            if not message_content and not image_data:
+                await self.send_error("Message cannot be empty unless an image is provided.")
                 return
+
+            # Save image if provided
+            image_path = None
+            if image_data:
+                image_path = await self.save_image(image_data)
 
             # Save the message
             user_data = await self.get_user_data(self.user.id)
-            message = await self.save_message(user_data["id"], message_content)
+            message = await self.save_message(user_data["id"], message_content, image_path)
 
-            # Fetch user details (name & picture)
-            
-            print(user_data)
             # Broadcast message to the group
             await self.channel_layer.group_send(
                 self.room_group_name,
@@ -69,8 +76,9 @@ class TicketChatConsumer(AsyncWebsocketConsumer):
                         "content": message.content,
                         "timestamp": localtime(message.timestamp).isoformat(),
                         "sender": self.user.id,
-                        "sender_name": user_data["name"],  
-                        "sender_picture": user_data["picture"]  
+                        "sender_name": user_data["name"],
+                        "sender_picture": user_data["picture"],
+                        "picture": f"http://127.0.0.1:8000/{message.image}" if message.image else None,
                     }
                 }
             )
@@ -128,7 +136,7 @@ class TicketChatConsumer(AsyncWebsocketConsumer):
         except ObjectDoesNotExist:
             return None
 
-    @sync_to_async(thread_sensitive=True)
+    @sync_to_async
     def get_old_messages(self):
         """Fetch old messages from the database."""
         messages = Message.objects.filter(ticket_id=self.ticket_id).order_by("timestamp")
@@ -137,17 +145,27 @@ class TicketChatConsumer(AsyncWebsocketConsumer):
                 "id": msg.id,
                 "content": msg.content,
                 "timestamp": localtime(msg.timestamp).isoformat(),
-                "sender_id" : msg.sender.profile.pk,
+                "sender_id": msg.sender.profile.pk,
                 "sender": msg.sender.name,
-                "sender_picture" : msg.sender.profile_picture.url,
+                "sender_picture": msg.sender.profile_picture.url if msg.sender.profile_picture else None,
+                "picture": f"http://127.0.0.1:8000/{msg.image}" if msg.image else None,
             }
             for msg in messages
         ]
-
-    @sync_to_async(thread_sensitive=True)
-    def save_message(self, sender_id, content):
+    @sync_to_async
+    def save_message(self, sender_id, content, image):
         """Save a new message to the database."""
-        return Message.objects.create(ticket_id=self.ticket_id, sender_id=sender_id, content=content)
+        return Message.objects.create(ticket_id=self.ticket_id, sender_id=sender_id, content=content, image=image)
+
+    @sync_to_async
+    def save_image(self, image_data):
+        """Save base64 image and return file path."""
+        format, imgstr = image_data.split(";base64,")
+        ext = format.split("/")[-1]
+        image_name = f"messages/{uuid.uuid4()}.{ext}"
+
+        image = ContentFile(base64.b64decode(imgstr), name=image_name)
+        return image
 
 class AdminTicketConsumer(AsyncWebsocketConsumer):
     async def connect(self):

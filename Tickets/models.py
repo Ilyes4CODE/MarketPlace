@@ -30,6 +30,7 @@ class Message(models.Model):
     ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="messages")
     sender = models.ForeignKey(MarketUser, on_delete=models.CASCADE)
     content = models.TextField()
+    image = models.ImageField(upload_to="messages/", null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
