@@ -1190,3 +1190,40 @@ def list_auction_products(request):
         serialized_products.append(serialized_product)
     
     return paginator.get_paginated_response(serialized_products)
+
+
+
+@api_view(['GET'])
+def get_product(request, product_id):
+    """
+    استرجاع منتج واحد حسب معرفه وإضافة قائمة العروض (bids) إذا كان المنتج من نوع bid
+    """
+    try:
+        product = Product.objects.get(id=product_id, is_approved=True, sold=False)
+    except Product.DoesNotExist:
+        return Response({"detail": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    # Serialize product with seller, category, and bids (if applicable)
+    serialized_product = ProductSerializer(product).data
+    seller = product.seller  # Assuming 'seller' is a MarketUser instance
+    category = product.category  # Assuming 'category' is a Category instance
+    
+    serialized_product["seller"] = {
+        "id": seller.id,
+        "name": seller.name,
+        "profile_picture": seller.profile_picture.url if seller.profile_picture else None,
+        "phone_number": seller.phone
+    }
+    
+    # Include category name in the response (handle None case)
+    serialized_product["category"] = {
+        "id": category.pk if category else None,
+        "name": category.name if category else "No Category"
+    }
+
+    # If the product is a bid, include all bids for it
+    if product.sale_type == "مزاد":
+        bids = Bid.objects.filter(product=product).order_by("-amount")  
+        serialized_product["bids"] = BidSerializer(bids, many=True).data
+
+    return Response(serialized_product)
