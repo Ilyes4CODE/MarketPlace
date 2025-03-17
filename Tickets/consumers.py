@@ -78,7 +78,7 @@ class TicketChatConsumer(AsyncWebsocketConsumer):
                         "sender": self.user.id,
                         "sender_name": user_data["name"],
                         "sender_picture": user_data["picture"],
-                        "picture": f"http://127.0.0.1:8000/{message.image}" if message.image else None,
+                        "picture": f"https://marketplace-4m56.onrender.com/{message.image}" if message.image else None,
                     }
                 }
             )
@@ -148,7 +148,7 @@ class TicketChatConsumer(AsyncWebsocketConsumer):
                 "sender_id": msg.sender.profile.pk,
                 "sender": msg.sender.name,
                 "sender_picture": msg.sender.profile_picture.url if msg.sender.profile_picture else None,
-                "picture": f"http://127.0.0.1:8000/{msg.image}" if msg.image else None,
+                "picture": f"https://marketplace-4m56.onrender.com/{msg.image}" if msg.image else None,
             }
             for msg in messages
         ]
