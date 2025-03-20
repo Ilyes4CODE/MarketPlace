@@ -75,7 +75,7 @@ class TicketChatConsumer(AsyncWebsocketConsumer):
                         "id": message.id,
                         "content": message.content,
                         "timestamp": localtime(message.timestamp).isoformat(),
-                        "sender": self.user.id,
+                        "sender_id": self.user.id,
                         "sender_name": user_data["name"],
                         "sender_picture": user_data["picture"],
                         "picture": f"https://marketplace-4m56.onrender.com/{message.image}" if message.image else None,
