@@ -18,6 +18,7 @@ from Auth.models import MarketUser
 from decorators import admin_required
 from django.db.models import Q, F, Value
 from django.db.models.functions import Coalesce
+from django.utils.timezone import now
 
 
 
@@ -617,6 +618,7 @@ def list_products(request):
     """
     استرجاع قائمة المنتجات مع إمكانية التصفية والفرز حسب السعر
     وإضافة قائمة العروض (bids) إذا كان المنتج من نوع bid
+    مع التحقق من انتهاء المزادات وإغلاقها
     """
     sale_type = request.query_params.get('sale_type', None)
     category_id = request.query_params.get('category', None)
@@ -626,6 +628,13 @@ def list_products(request):
     title = request.query_params.get('title', None)
 
     products = Product.objects.filter(is_approved=True, sold=False)
+
+    # Close expired bids
+    Product.objects.filter(
+        sale_type="مزاد",
+        closed=False,
+        bid_end_time__lte=now()
+    ).update(closed=True, closed_at=now())
 
     # Apply filters
     if sale_type:
@@ -648,7 +657,7 @@ def list_products(request):
     # Sorting by price (lowest available price)
     if price_order == "Min":
         products = products.annotate(
-            effective_price=Coalesce('price', 'starting_price')  # Use the first non-null value
+            effective_price=Coalesce('price', 'starting_price')
         ).order_by("effective_price")
     elif price_order == "Max":
         products = products.annotate(
@@ -666,17 +675,16 @@ def list_products(request):
     serialized_products = []
     for product in paginated_products:
         serialized_product = ProductSerializer(product).data
-        seller = product.seller  # Assuming 'seller' is a MarketUser instance
-        category = product.category  # Assuming 'category' is a Category instance
+        seller = product.seller
+        category = product.category
         
         serialized_product["seller"] = {
             "id": seller.id,
             "name": seller.name,
             "profile_picture": seller.profile_picture.url if seller.profile_picture else None,
-            "phone_number" : seller.phone
+            "phone_number": seller.phone
         }
         
-        # Include category name in the response (handle None case)
         serialized_product["category"] = {
             "id": category.pk if category else None,
             "name": category.name if category else "No Category"
@@ -684,7 +692,7 @@ def list_products(request):
 
         # If the product is a bid, include all bids for it
         if product.sale_type == "مزاد":
-            bids = Bid.objects.filter(product=product).order_by("-amount")  
+            bids = Bid.objects.filter(product=product).order_by("-amount")
             serialized_product["bids"] = BidSerializer(bids, many=True).data
 
         serialized_products.append(serialized_product)
