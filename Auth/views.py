@@ -207,7 +207,7 @@ def get_user_profile(request):
 
     serializer = UserSerializer(market_user)
     user_data = serializer.data
-    user_data["id"] = user.id  # Replace MarketUser ID with User ID
+    user_data["id"] = user.id
 
     return Response(user_data)
 
