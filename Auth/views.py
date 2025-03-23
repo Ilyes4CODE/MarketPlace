@@ -206,7 +206,10 @@ def get_user_profile(request):
         return Response({"error": "MarketUser profile not found"}, status=status.HTTP_404_NOT_FOUND)
 
     serializer = UserSerializer(market_user)
-    return Response(serializer.data)
+    user_data = serializer.data
+    user_data["id"] = user.id  # Replace MarketUser ID with User ID
+
+    return Response(user_data)
 
 
 @swagger_auto_schema(method='patch',operation_description="Updating User Profile", request_body=UpdateUserSerializer)
