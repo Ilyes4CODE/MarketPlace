@@ -491,3 +491,23 @@ def social_auth(request):
         )
 
         return Response(market_user.get_tokens(), status=status.HTTP_201_CREATED)
+    
+
+@api_view(['POST'])
+def reset_password(request):
+    """
+    Allows a user to reset their password by providing an email and a new password.
+    """
+    email = request.data.get('email')
+    new_password = request.data.get('new_password')
+
+    if not email or not new_password:
+        return Response({"error": "البريد الإلكتروني وكلمة المرور الجديدة مطلوبة"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = User.objects.get(email=email)
+        user.password = make_password(new_password)
+        user.save()
+        return Response({"message": "تم إعادة تعيين كلمة المرور بنجاح"}, status=status.HTTP_200_OK)
+    except User.DoesNotExist:
+        return Response({"error": "البريد الإلكتروني غير مسجل لدينا"}, status=status.HTTP_404_NOT_FOUND)

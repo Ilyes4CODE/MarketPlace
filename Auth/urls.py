@@ -16,4 +16,5 @@ urlpatterns = [
     path('confirm_delete_account/',views.confirm_account_deletion),
     path('update-password/', views.update_password, name='update-password'),
     path('Social_Auth/',views.social_auth),
+    path('reset_password/',views.reset_password),
 ]
