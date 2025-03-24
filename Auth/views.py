@@ -11,12 +11,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.cache import cache
 import logging
 from django.contrib.auth.models import Group
-from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
-from django.views.decorators.csrf import csrf_exempt
 import re
 from rest_framework_simplejwt.views import TokenObtainPairView
 from Product.utils import send_real_time_notification
+from django.contrib.auth.hashers import make_password
+from django.contrib.auth.models import User
+from django.shortcuts import get_object_or_404
+
 
 phone_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Phone number of the user")
 email_schema = openapi.Schema(type=openapi.TYPE_STRING, description="Email of the user")
@@ -449,3 +451,43 @@ def update_password(request):
     user.profile.save()
 
     return Response({"message": "تم تحديث كلمة المرور بنجاح"}, status=status.HTTP_200_OK)
+
+
+
+@api_view(['POST'])
+def social_auth(request):
+    """
+    Handles authentication via Google, Facebook, or Apple ID.
+    If the user exists, return tokens.
+    If not, create a user with a default password, register them, and return tokens.
+    """
+    email = request.data.get('email')
+    registration_method = request.data.get('registration_method')
+
+    if not email or not registration_method:
+        return Response({"error": "Email and registration method are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    user = User.objects.filter(email=email).first()
+
+    if user:
+        # User exists, return tokens
+        market_user = get_object_or_404(MarketUser, profile=user)
+        return Response(market_user.get_tokens(), status=status.HTTP_200_OK)
+    else:
+        # Create user with a default password
+        default_password = "secure_random_password_123"  # You can generate a random one
+        new_user = User.objects.create(
+            username=email.split('@')[0],
+            email=email,
+            password=make_password(default_password)
+        )
+
+        # Create MarketUser linked to the new user
+        market_user = MarketUser.objects.create(
+            profile=new_user,
+            name=new_user.username,
+            email=email,
+            registration_method=registration_method
+        )
+
+        return Response(market_user.get_tokens(), status=status.HTTP_201_CREATED)
