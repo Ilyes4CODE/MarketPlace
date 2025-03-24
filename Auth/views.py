@@ -487,7 +487,8 @@ def social_auth(request):
             profile=new_user,
             name=new_user.username,
             email=email,
-            registration_method=registration_method
+            registration_method=registration_method,
+            is_verified = True
         )
 
         return Response(market_user.get_tokens(), status=status.HTTP_201_CREATED)
