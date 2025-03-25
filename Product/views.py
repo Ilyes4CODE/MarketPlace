@@ -1083,7 +1083,7 @@ def user_products_and_bids(request):
 
     # 🔹 Filter **Simple Products** (sold) & **Auction Products** (in history)
     sold_products = user_products.filter(sale_type="عادي",is_approved=True)
-    history_products = user_products.filter(sale_type="مزاد", is_in_history=True)
+    history_products = user_products.filter(sale_type="مزاد", is_in_history=True,is_approved=True)
 
     # Combine results
     filtered_products = sold_products | history_products
