@@ -24,7 +24,7 @@ class ProductSerializer(serializers.ModelSerializer):
 
 
 class BidSerializer(serializers.ModelSerializer):
-    buyer_name = serializers.CharField(source='buyer.user.username', read_only=True)
+    buyer_name = serializers.CharField(source='buyer.name', read_only=True)
     product_name = serializers.CharField(source='product.title', read_only=True)
     seller_name = serializers.CharField(source='product.seller.user.username', read_only=True)
     
