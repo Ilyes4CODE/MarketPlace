@@ -9,16 +9,18 @@ class ProductPhotoSerializer(serializers.ModelSerializer):
 
 class ProductSerializer(serializers.ModelSerializer):
     photos = ProductPhotoSerializer(many=True, read_only=True)
+    seller_name = serializers.CharField(source='seller.name', read_only=True)  # Fetch seller's name
 
     class Meta:
         model = Product
         fields = [
             'id', 'title', 'description', 'price', 'starting_price', 'buy_now_price', 
             'duration', 'bid_end_time', 'closed', 'currency', 'condition', 'location', 
-            'is_approved', 'sale_type', 'seller', 'photos','category','is_in_history',
-            'closed_at'
+            'is_approved', 'sale_type', 'seller', 'seller_name', 'photos', 'category', 
+            'is_in_history', 'closed_at'
         ]
         read_only_fields = ['id', 'is_approved', 'seller', 'bid_end_time', 'closed']
+
 
 
 class BidSerializer(serializers.ModelSerializer):
