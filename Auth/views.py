@@ -482,7 +482,7 @@ def social_auth(request):
             password=make_password(default_password)
         )
 
-        # Create MarketUser linked to the new user
+        # Create MarketUser linked to the new user 
         market_user = MarketUser.objects.create(
             profile=new_user,
             name=new_user.username,
