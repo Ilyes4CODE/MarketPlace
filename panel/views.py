@@ -72,14 +72,23 @@ def get_all_users(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 # @admin_required
-def approve_products(request,product_id):
-    product = Product.objects.get(pk=product_id)
-    if product.is_approved :
-        return Response({'info':'already approved'},status=status.HTTP_404_NOT_FOUND)
-    product.is_approved = True
-    send_real_time_notification(product.seller,"لقد تم قبول منتوجك ينجاح")
+def toggle_product_approval(request, product_id):
+    try:
+        product = Product.objects.get(pk=product_id)
+    except Product.DoesNotExist:
+        return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    product.is_approved = not product.is_approved
     product.save()
-    return Response({'info':'product approved successfully ! '},status=status.HTTP_202_ACCEPTED)
+
+    if product.is_approved:
+        send_real_time_notification(product.seller, "لقد تم قبول منتوجك بنجاح")
+        message = "Product approved successfully!"
+    else:
+        send_real_time_notification(product.seller, "تم إلغاء الموافقة على منتوجك")
+        message = "Product approval revoked!"
+
+    return Response({'info': message}, status=status.HTTP_202_ACCEPTED)
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
