@@ -1204,7 +1204,7 @@ def list_auction_products(request):
 @api_view(['GET'])
 def get_product(request, product_id):
     """
-    استرجاع منتج واحد حسب معرفه وإضافة قائمة العروض (bids) إذا كان المنتج من نوع bid
+    استرجاع منتج واحد حسب معرفه وإضافة قائمة العروض (bids) إذا كان المنتج من نوع مزاد
     """
     try:
         product = Product.objects.get(id=product_id, is_approved=True, sold=False)
@@ -1229,9 +1229,12 @@ def get_product(request, product_id):
         "name": category.name if category else "No Category"
     }
 
-    # If the product is a bid, include all bids for it
+    # If the product is a bid, include all bids and a separate list of bid amounts
     if product.sale_type == "مزاد":
-        bids = Bid.objects.filter(product=product).order_by("-amount")  
+        bids = Bid.objects.filter(product=product).order_by("-amount")
         serialized_product["bids"] = BidSerializer(bids, many=True).data
+
+        # Extract bid amounts in descending order
+        serialized_product["bid_amounts"] = [bid.amount for bid in bids]
 
     return Response(serialized_product)

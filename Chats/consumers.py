@@ -79,7 +79,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         messages = Message.objects.filter(conversation_id=conversation_id).order_by("timestamp")
         return [
             {
-                "sender": msg.sender.id,
+                "sender": msg.sender.profile.pk,
                 "content": msg.content,
                 "timestamp": msg.timestamp.isoformat(),
                 "picture": f"https://marketplace-4m56.onrender.com{msg.picture.url}" if msg.picture else None  # Check if picture exists
@@ -94,7 +94,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             conversation = Conversation.objects.get(id=conversation_id)
             receiver = conversation.seller if conversation.buyer.profile.id == current_user_id else conversation.buyer
             return {
-                "id": receiver.id,
+                "id": receiver.profile.pk,
                 "name": receiver.name,
                 "profile_picture": f"https://marketplace-4m56.onrender.com{receiver.profile_picture.url}" if receiver.profile_picture else None
             }
@@ -129,13 +129,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         # ✅ Fetch sender and recipient details safely
         sender_data = await database_sync_to_async(lambda: {
-            "id": sender_marketuser.pk,
+            "id": sender_marketuser.profile.pk,
             "username": sender_marketuser.name,
             "profile_picture": f"https://marketplace-4m56.onrender.com{sender_marketuser.profile_picture.url}" if sender_marketuser.profile_picture else None
         })()
 
         recipient_data = await database_sync_to_async(lambda: {
-            "id": recipient_marketuser.pk,
+            "id": recipient_marketuser.profile.pk,
             "username": recipient_marketuser.name,
             "profile_picture": f"https://marketplace-4m56.onrender.com{recipient_marketuser.profile_picture.url}" if recipient_marketuser.profile_picture else None
         })()

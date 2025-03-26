@@ -43,6 +43,7 @@ def manage_bid(request, bid_id):
         if product.buy_now_price and bid.amount >= product.buy_now_price:
             product.closed = True
             product.closed_at = timezone.now()
+            product.bid_end_time = timezone.now()
             product.save()
 
             # Start a conversation between buyer and seller
