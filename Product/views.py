@@ -1235,6 +1235,6 @@ def get_product(request, product_id):
         serialized_product["bids"] = BidSerializer(bids, many=True).data
 
         # Extract bid amounts in descending order
-        serialized_product["bid_amounts"] = [bid.amount for bid in bids]
+        serialized_product["price"] = [bid.amount for bid in bids]
 
     return Response(serialized_product)
