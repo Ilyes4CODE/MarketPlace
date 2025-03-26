@@ -13,6 +13,8 @@ from Product.models import Product
 from rest_framework import status
 from Product.utils import send_real_time_notification,start_conversation
 from Product.serializer import BidSerializer
+from django.utils import timezone
+
 class UserNotificationsView(ListAPIView):
     serializer_class = NotificationBidSerializer
     permission_classes = [IsAuthenticated]
@@ -31,24 +33,50 @@ def manage_bid(request, bid_id):
     action = request.data.get("action")  # "accept" or "reject"
     seller = bid.product.seller
     buyer = bid.buyer
+    product = bid.product
 
     if action == "accept":
         bid.status = "accepted"
-        
-        # 🔔 إرسال إشعارات
-        send_real_time_notification(seller, f"تم قبول المزايدة بقيمة {bid.amount} على منتجك: {bid.product.title}.")
-        send_real_time_notification(buyer, f"تهانينا! تم قبول مزايدتك على '{bid.product.title}' بقيمة {bid.amount}.")
-    
+        bid.save()
+
+        # Check if the bid amount meets or exceeds the buy now price
+        if product.buy_now_price and bid.amount >= product.buy_now_price:
+            product.closed = True
+            product.closed_at = timezone.now()
+            product.save()
+
+            # Start a conversation between buyer and seller
+            start_conversation(seller, buyer, product)
+
+            # Send notifications
+            send_real_time_notification(
+                seller, f"تم بيع منتجك '{product.title}' بمبلغ {bid.amount} {product.currency}."
+            )
+            send_real_time_notification(
+                buyer, f"تهانينا! لقد فزت بالمزاد على '{product.title}' بمبلغ {bid.amount} {product.currency}."
+            )
+
+        else:
+            # Send normal acceptance notifications
+            send_real_time_notification(
+                seller, f"تم قبول المزايدة بقيمة {bid.amount} على منتجك: {product.title}."
+            )
+            send_real_time_notification(
+                buyer, f"تهانينا! تم قبول مزايدتك على '{product.title}' بقيمة {bid.amount}."
+            )
+
     elif action == "reject":
         bid.status = "rejected"
-        
-        # 🔔 إرسال إشعار الرفض
-        send_real_time_notification(buyer, f"عذرًا، تم رفض مزايدتك على '{bid.product.title}' بقيمة {bid.amount}.")
-    
+        bid.save()
+
+        # Send rejection notification
+        send_real_time_notification(
+            buyer, f"عذرًا، تم رفض مزايدتك على '{product.title}' بقيمة {bid.amount}."
+        )
+
     else:
         return Response({"error": "إجراء غير صالح"}, status=status.HTTP_400_BAD_REQUEST)
 
-    bid.save()
     return Response({"message": f"تم { 'قبول' if action == 'accept' else 'رفض' } المزايدة بنجاح"})
 
 
