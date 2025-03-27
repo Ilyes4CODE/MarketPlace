@@ -1113,7 +1113,7 @@ def user_products_and_bids(request):
 
     return paginator.get_paginated_response({
         'user_products': formatted_products,
-        'user_bids': bids_serializer.data,
+        'bids': bids_serializer.data,
     })
 
 
