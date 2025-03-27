@@ -163,19 +163,21 @@ def start_conversation(request, product_id):
     last_message = Message.objects.filter(conversation=conversation).order_by('-timestamp').first()
 
     response_data = {
-        "id": conversation.id,
-        "product_id": conversation.product.id,
-        "created_at": conversation.created_at,
-        "last_message": {
-            "id": last_message.id if last_message else None,
-            "content": last_message.content if last_message else None,
-            "timestamp": last_message.timestamp.strftime("%Y-%m-%d %H:%M:%S") if last_message else None,
-            "sender_id": last_message.sender.id if last_message else None
-        },
-        "chatting_with": {
-            "id": other_user.id,
-            "name": other_user.name,
-            "profile_picture": other_user.profile_picture.url if other_user.profile_picture else None
+        "conversation":{
+            "id": conversation.id,
+            "product_id": conversation.product.id,
+            "created_at": conversation.created_at,
+            "last_message": {
+                "id": last_message.id if last_message else None,
+                "content": last_message.content if last_message else None,
+                "timestamp": last_message.timestamp.strftime("%Y-%m-%d %H:%M:%S") if last_message else None,
+                "sender_id": last_message.sender.id if last_message else None
+            },
+            "chatting_with": {
+                "id": other_user.id,
+                "name": other_user.name,
+                "profile_picture": other_user.profile_picture.url if other_user.profile_picture else None
+            }
         }
     }
 
