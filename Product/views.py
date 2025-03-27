@@ -1100,7 +1100,6 @@ def user_products_and_bids(request):
                 "id": product["seller"],
                 "name": product["seller_name"],
                 "profile_picture": user.profile_picture.url if user.profile_picture else None,
-                "phone_number": user.phone_number
             },
             "category": {
                 "id": product["category"] if product["category"] else None,
