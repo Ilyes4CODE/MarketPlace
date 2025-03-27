@@ -69,17 +69,17 @@ def create_bid_product(request):
     required_fields = ['starting_price', 'duration']
     for field in required_fields:
         if field not in data or not data[field]:
-            return Response({field: f"حقل {field} مطلوب لإضافة منتج في المزاد."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": f"حقل {field} مطلوب لإضافة منتج في المزاد."}, status=status.HTTP_400_BAD_REQUEST)
 
     # Get uploaded photos
     photos = request.FILES.getlist('photos')
 
     # Validate that at least 1 photo and at most 5 photos are provided
     if not photos:
-        return Response({"photos": "يجب تحميل صورة واحدة على الأقل."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "يجب تحميل صورة واحدة على الأقل."}, status=status.HTTP_400_BAD_REQUEST)
     
     if len(photos) > 5:
-        return Response({"photos": "يمكنك تحميل 5 صور كحد أقصى."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "يمكنك تحميل 5 صور كحد أقصى."}, status=status.HTTP_400_BAD_REQUEST)
 
     product_serializer = ProductSerializer(data=data, context={'seller': seller})
     if product_serializer.is_valid():
@@ -142,26 +142,26 @@ def create_simple_product(request):
     # Validate category existence and type
     category_id = data.get('category')
     if not category_id:
-        return Response({"category": "التصنيف مطلوب."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "التصنيف مطلوب."}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
         category_id = int(category_id)  # Ensure it's an integer
         category = Category.objects.get(pk=category_id)
     except (ValueError, Category.DoesNotExist):
-        return Response({"category": "رقم التصنيف غير صالح."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "رقم التصنيف غير صالح."}, status=status.HTTP_400_BAD_REQUEST)
 
     # Validate price field
     if 'price' not in data or not data['price']:
-        return Response({"price": "السعر مطلوب للمنتجات العادية."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "السعر مطلوب للمنتجات العادية."}, status=status.HTTP_400_BAD_REQUEST)
 
     # Handle file uploads separately
     photos = request.FILES.getlist('photos')
 
     if not photos:
-        return Response({"photos": "يجب تحميل صورة واحدة على الأقل."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "يجب تحميل صورة واحدة على الأقل."}, status=status.HTTP_400_BAD_REQUEST)
 
     if len(photos) > 5:
-        return Response({"photos": "يمكنك تحميل 5 صور كحد أقصى."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "يمكنك تحميل 5 صور كحد أقصى."}, status=status.HTTP_400_BAD_REQUEST)
 
     # Serialize product
     product_serializer = ProductSerializer(data=data, context={'seller': seller, 'category': category})
@@ -1064,42 +1064,57 @@ class CustomPagination(PageNumberPagination):
 @not_banned_user_required
 def user_products_and_bids(request):
     user = request.user.marketuser
-    sale_type = request.GET.get('sell_type', None)  
+    sale_type = request.GET.get('sell_type', None)
 
-    # 🔹 Get user's products
     user_products = Product.objects.filter(seller=user)
 
-    # Apply 'sale_type' filter if provided
     if sale_type:
-        user_products = user_products.filter(sale_type=sale_type)  
+        user_products = user_products.filter(sale_type=sale_type)
 
-    # 🔍 **Check & update expired auctions**
     now = timezone.now()
-    expired_auctions = user_products.filter(sale_type="مزاد", closed=True, is_in_history=False, closed_at__lte=now - timezone.timedelta(days=1))
+    expired_auctions = user_products.filter(
+        sale_type="مزاد", closed=True, is_in_history=False, closed_at__lte=now - timezone.timedelta(days=1)
+    )
 
     for product in expired_auctions:
         product.is_in_history = True
         product.save()
 
-    # 🔹 Filter **Simple Products** (sold) & **Auction Products** (in history)
-    sold_products = user_products.filter(sale_type="عادي",is_approved=True)
-    history_products = user_products.filter(sale_type="مزاد", is_in_history=True,is_approved=True)
+    sold_products = user_products.filter(sale_type="عادي", is_approved=True)
+    history_products = user_products.filter(sale_type="مزاد", is_in_history=True, is_approved=True)
 
-    # Combine results
     filtered_products = sold_products | history_products
 
-    # Apply pagination
     paginator = CustomPagination()
     paginated_products = paginator.paginate_queryset(filtered_products, request)
 
-    # Serialize data
+    # Serialize products
     products_serializer = ProductSerializer(paginated_products, many=True)
+    
+    # Modify the product response to match your required format
+    formatted_products = []
+    for product in products_serializer.data:
+        formatted_products.append({
+            **product,  # Keep original fields
+            "seller": {
+                "id": product["seller"],
+                "name": product["seller_name"],
+                "profile_picture": user.profile_picture.url if user.profile_picture else None,
+                "phone_number": user.phone_number
+            },
+            "category": {
+                "id": product["category"] if product["category"] else None,
+                "name": "No Category" if product["category"] is None else product["category"]
+            },
+        })
+
+    # Get user bids
     user_bids = Bid.objects.filter(buyer=user)
     bids_serializer = BidSerializer(user_bids, many=True)
 
     return paginator.get_paginated_response({
-        'user_products': products_serializer.data,
-        'user_bids': bids_serializer.data, 
+        'user_products': formatted_products,
+        'user_bids': bids_serializer.data,
     })
 
 
