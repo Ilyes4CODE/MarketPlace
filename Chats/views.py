@@ -147,16 +147,36 @@ def start_conversation(request, product_id):
     except Product.DoesNotExist:
         return Response({"error": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    if buyer == seller : 
-        return Response({"info":"you cannot message youself"},status=status.HTTP_400_BAD_REQUEST)
+    if buyer == seller:
+        return Response({"info": "You cannot message yourself"}, status=status.HTTP_400_BAD_REQUEST)
+
     conversation, created = Conversation.objects.get_or_create(
         seller=seller,
         buyer=buyer,
         product=product
     )
 
-    serializer = ConversationSerializer(conversation)
+    # Determine the other user
+    other_user = seller if buyer == conversation.buyer else conversation.buyer
 
-    return Response({
-        "conversation": serializer.data,
-    }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+    # Fetch the latest message (if any)
+    last_message = Message.objects.filter(conversation=conversation).order_by('-timestamp').first()
+
+    response_data = {
+        "id": conversation.id,
+        "product_id": conversation.product.id,
+        "created_at": conversation.created_at,
+        "last_message": {
+            "id": last_message.id if last_message else None,
+            "content": last_message.content if last_message else None,
+            "timestamp": last_message.timestamp.strftime("%Y-%m-%d %H:%M:%S") if last_message else None,
+            "sender_id": last_message.sender.id if last_message else None
+        },
+        "chatting_with": {
+            "id": other_user.id,
+            "name": other_user.name,
+            "profile_picture": other_user.profile_picture.url if other_user.profile_picture else None
+        }
+    }
+
+    return Response(response_data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
